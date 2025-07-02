@@ -36,7 +36,7 @@ module.exports = async (req, res) => {
     console.log('Iniciando navegador headless...');
     browser = await playwright.chromium.launch({
       args: chromium.args,
-      executablePath: await chromium.executablePath(process.env.AWS_LAMBDA_FUNCTION_NAME ? 'https://github.com/Sparticuz/chromium/releases/download/v123.0.1/chromium-v123.0.1-pack.tar' : undefined),
+      executablePath: await chromium.executablePath(process.env.AWS_LAMBDA_FUNCTION_NAME ? 'https://github.com/Sparticuz/chromium/releases/download/v119.0.0/chromium-v119.0.0-pack.tar' : undefined), // <-- AQUI ESTÁ A MUDANÇA
       headless: true,
     });
     
@@ -74,12 +74,10 @@ module.exports = async (req, res) => {
     const produtos = await page.$$eval(seletorTabela, rows =>
       rows.map(row => {
         const columns = row.querySelectorAll('td');
-        // A ordem das colunas é baseada na estrutura visual da tabela
-        // Coluna 1: Foto, Coluna 2: Título, Coluna 3: Estoque, Coluna 4: Preço
         return {
           nome: columns[1]?.innerText.trim(),
-          estoque: parseInt(columns[2]?.innerText.trim(), 10) || 0, // Converte para número
-          preco: columns[3]?.innerText.trim().replace('R$', '').replace(',', '.').trim(), // Formata o preço para número
+          estoque: parseInt(columns[2]?.innerText.trim(), 10) || 0,
+          preco: columns[3]?.innerText.trim().replace('R$', '').replace(',', '.').trim(),
         };
       })
     );
@@ -100,6 +98,5 @@ module.exports = async (req, res) => {
       await browser.close();
       console.log('Navegador fechado.');
     }
- 
   }
 };
