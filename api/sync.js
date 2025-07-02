@@ -4,7 +4,6 @@ const axios = require('axios');
 
 async function obaobaSync() {
   let browser = null;
-  let page; 
   try {
     const { OBAOBA_EMAIL, OBAOBA_SENHA, CAPTCHA_API_KEY } = process.env;
 
@@ -16,7 +15,7 @@ async function obaobaSync() {
     });
     
     const context = await browser.newContext({ userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36' });
-    page = await context.newPage();
+    const page = await context.newPage();
     const loginUrl = 'https://app.obaobamix.com.br/login';
 
     console.log(`Navegando para a página de login: ${loginUrl}`);
@@ -33,12 +32,18 @@ async function obaobaSync() {
     console.log('Realizando o clique de login...');
     await page.locator('button[type="submit"]').click();
 
-    await page.waitForURL('**/painel', { timeout: 60000 });
-    console.log('Login realizado com sucesso! Navegando para a lista de produtos...');
+    // **** CORREÇÃO PRINCIPAL ****
+    // Esperamos pelo redirecionamento para /admin, que você informou ser a página correta.
+    console.log('Aguardando redirecionamento para o painel de administração...');
+    await page.waitForURL('**/admin', { timeout: 60000 });
+    console.log('Login realizado com sucesso! Acessando a página de produtos...');
 
+    // **** SEGUNDA CORREÇÃO ****
+    // Navegamos explicitamente para a página de produtos que você indicou.
     await page.goto('https://app.obaobamix.com.br/admin/products');
 
     const seletorTabela = 'table.datatable-Product tbody tr';
+    console.log('Aguardando a tabela de produtos carregar...');
     await page.waitForSelector(seletorTabela, { timeout: 60000 });
     console.log('Tabela de produtos carregada. Extraindo dados...');
 
@@ -62,32 +67,6 @@ async function obaobaSync() {
 
   } catch (error) {
     console.error('Ocorreu um erro durante a execução do robô:', error.message);
-
-    // **** NOSSO DETETIVE ESPECIALISTA (v3) ****
-    if (page && error.name === 'TimeoutError') {
-      console.log("================== INICIANDO DEBUG PÓS-TIMEOUT ==================");
-      try {
-        // Espera 1 segundo para qualquer mensagem de erro aparecer na tela
-        await page.waitForTimeout(1000);
-        
-        // Tenta encontrar um elemento de erro comum na página
-        const errorElement = page.locator('.alert, .alert-danger, .invalid-feedback, [class*="error"], .text-danger');
-        
-        if (await errorElement.count() > 0) {
-            const errorMessage = await errorElement.first().textContent();
-            console.log("!!! MENSAGEM DE ERRO ENCONTRADA NA PÁGINA !!!");
-            console.log(errorMessage.trim());
-        } else {
-            console.log("Nenhuma mensagem de erro padrão foi encontrada na página. Tentando capturar o HTML como plano B.");
-            const pageContent = await page.content();
-            console.log("Conteúdo HTML da página de falha:", pageContent);
-        }
-      } catch (debugError) {
-          console.error("ERRO AO TENTAR DEPURAR A PÁGINA:", debugError.message);
-      }
-      console.log("================== FIM DO DEBUG ==================");
-    }
-    
     throw error;
   } finally {
     if (browser) {
