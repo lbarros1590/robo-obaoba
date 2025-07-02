@@ -1,4 +1,3 @@
-api/sync.js
 const playwright = require('playwright-core');
 const chromium = require('@sparticuz/chromium');
 const axios = require('axios');
