@@ -2,9 +2,9 @@ const playwright = require('playwright-core');
 const chromium = require('@sparticuz/chromium');
 const axios = require('axios');
 
-// A lógica principal do robô, agora dentro de uma função nomeada
 async function obaobaSync() {
   let browser = null;
+  let page; // Definimos a 'page' aqui para que ela seja acessível no bloco catch
   try {
     const { OBAOBA_EMAIL, OBAOBA_SENHA, CAPTCHA_API_KEY } = process.env;
 
@@ -14,9 +14,9 @@ async function obaobaSync() {
       executablePath: await chromium.executablePath(),
       headless: true,
     });
-
+    
     const context = await browser.newContext({ userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36' });
-    const page = await context.newPage();
+    page = await context.newPage();
     const loginUrl = 'https://app.obaobamix.com.br/login';
 
     console.log(`Navegando para a página de login: ${loginUrl}`);
@@ -25,14 +25,16 @@ async function obaobaSync() {
     const siteKey = await page.locator('.g-recaptcha').getAttribute('data-sitekey');
     const captchaToken = await resolverCaptcha(siteKey, loginUrl, CAPTCHA_API_KEY);
     await page.evaluate(token => { document.getElementById('g-recaptcha-response').value = token; }, captchaToken);
-
+    
     console.log('Preenchendo credenciais de login...');
     await page.locator('#email').fill(OBAOBA_EMAIL);
     await page.locator('#password').fill(OBAOBA_SENHA);
-
+    
     console.log('Realizando o clique de login...');
     await page.locator('button[type="submit"]').click();
-    await page.waitForURL('**/painel', { timeout: 30000 });
+
+    // AUMENTAMOS O TEMPO DE ESPERA E COLOCAMOS O ERRO EM UM BLOCO TRY/CATCH SEPARADO
+    await page.waitForURL('**/painel', { timeout: 60000 });
     console.log('Login realizado com sucesso! Navegando para a lista de produtos...');
 
     await page.goto('https://app.obaobamix.com.br/admin/products');
@@ -52,8 +54,7 @@ async function obaobaSync() {
       })
     );
     console.log(`Extração concluída. ${produtos.length} produtos encontrados.`);
-
-    // Em vez de retornar uma resposta HTTP, a função agora retorna os dados
+    
     return {
         message: 'Produtos extraídos com sucesso!',
         totalProdutos: produtos.length,
@@ -62,7 +63,16 @@ async function obaobaSync() {
 
   } catch (error) {
     console.error('Ocorreu um erro durante a execução do robô:', error.message);
-    // Lançamos o erro para que o server.js possa capturá-lo
+
+    // **** NOSSO DETETIVE ****
+    // Se o erro for de timeout após o login, vamos capturar o HTML da página
+    if (page && error.name === 'TimeoutError') {
+      console.log("================== DEBUG: CONTEÚDO DA PÁGINA DE FALHA ==================");
+      const pageContent = await page.content();
+      console.log(pageContent);
+      console.log("========================================================================");
+    }
+    
     throw error;
   } finally {
     if (browser) {
@@ -74,7 +84,6 @@ async function obaobaSync() {
 
 // Função interna para o captcha
 async function resolverCaptcha(siteKey, pageUrl, apiKey) {
-  // (O código do resolverCaptcha continua o mesmo de antes, não precisa colar de novo se já estiver aí)
   console.log('Enviando CAPTCHA para resolução...');
   const res = await axios.post(`http://2captcha.com/in.php`, null, {
     params: { key: apiKey, method: 'userrecaptcha', googlekey: siteKey, pageurl: pageUrl, json: 1 },
@@ -96,5 +105,4 @@ async function resolverCaptcha(siteKey, pageUrl, apiKey) {
   return result;
 }
 
-// Exportamos apenas a função principal para ser usada por outros arquivos
 module.exports = obaobaSync;
