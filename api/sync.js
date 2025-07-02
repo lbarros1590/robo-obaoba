@@ -2,7 +2,6 @@ const playwright = require('playwright-core');
 const chromium = require('@sparticuz/chromium');
 const axios = require('axios');
 
-// Função para resolver o reCAPTCHA v2 usando a API do 2Captcha
 async function resolverCaptcha(siteKey, pageUrl, apiKey) {
   console.log('Enviando CAPTCHA para resolução...');
   const res = await axios.post(`http://2captcha.com/in.php`, null, {
@@ -25,7 +24,6 @@ async function resolverCaptcha(siteKey, pageUrl, apiKey) {
   return result;
 }
 
-// Função principal que será executada pela Vercel
 module.exports = async (req, res) => {
   let browser = null;
   try {
@@ -34,11 +32,11 @@ module.exports = async (req, res) => {
     console.log('Iniciando navegador headless...');
     browser = await playwright.chromium.launch({
       args: chromium.args,
-      executablePath: await chromium.executablePath(process.env.AWS_LAMBDA_FUNCTION_NAME ? 'https://github.com/Sparticuz/chromium/releases/download/v123.0.1/chromium-v123.0.1-pack.tar' : undefined),
-      headless: true,
+      executablePath: await chromium.executablePath(), // <-- Linha simplificada
+      headless: chromium.headless,
     });
-    
-    const context = await browser.newContext({ userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36' });
+
+    const context = await browser.newContext({ userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36' });
     const page = await context.newPage();
     const loginUrl = 'https://app.obaobamix.com.br/login';
 
@@ -48,11 +46,11 @@ module.exports = async (req, res) => {
     const siteKey = await page.locator('.g-recaptcha').getAttribute('data-sitekey');
     const captchaToken = await resolverCaptcha(siteKey, loginUrl, CAPTCHA_API_KEY);
     await page.evaluate(token => { document.getElementById('g-recaptcha-response').value = token; }, captchaToken);
-    
+
     console.log('Preenchendo credenciais de login...');
     await page.locator('#email').fill(OBAOBA_EMAIL);
     await page.locator('#password').fill(OBAOBA_SENHA);
-    
+
     console.log('Realizando o clique de login...');
     await page.locator('button[type="submit"]').click();
     await page.waitForURL('**/painel', { timeout: 30000 });
@@ -75,7 +73,7 @@ module.exports = async (req, res) => {
       })
     );
     console.log(`Extração concluída. ${produtos.length} produtos encontrados.`);
-    
+
     res.status(200).json({
         message: 'Produtos extraídos com sucesso!',
         totalProdutos: produtos.length,
