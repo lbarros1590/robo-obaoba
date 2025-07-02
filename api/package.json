@@ -1,0 +1,14 @@
+{
+  "name": "robo-obaoba-extrator",
+  "version": "1.0.0",
+  "description": "Robô para extrair dados de produtos da plataforma Oba Oba Mix.",
+  "main": "api/sync.js",
+  "scripts": {
+    "start": "node api/sync.js"
+  },
+  "dependencies": {
+    "@sparticuz/chromium": "123.0.1",
+    "axios": "^1.6.8",
+    "playwright-core": "1.44.0"
+  }
+}
