@@ -13,7 +13,6 @@ async function resolverCaptcha(siteKey, pageUrl, apiKey) {
   console.log(`ID da requisição do CAPTCHA: ${requestId}`);
 
   let result;
-  // Fica verificando a cada 5 segundos se o CAPTCHA já foi resolvido
   while (!result) {
     await new Promise(resolve => setTimeout(resolve, 5000));
     console.log('Aguardando resolução do CAPTCHA...');
@@ -32,11 +31,10 @@ module.exports = async (req, res) => {
   try {
     const { OBAOBA_EMAIL, OBAOBA_SENHA, CAPTCHA_API_KEY } = process.env;
 
-    // Lançamento do navegador em ambiente de servidor (serverless)
     console.log('Iniciando navegador headless...');
     browser = await playwright.chromium.launch({
       args: chromium.args,
-      executablePath: await chromium.executablePath(process.env.AWS_LAMBDA_FUNCTION_NAME ? 'https://github.com/Sparticuz/chromium/releases/download/v119.0.0/chromium-v119.0.0-pack.tar' : undefined), // <-- AQUI ESTÁ A MUDANÇA
+      executablePath: await chromium.executablePath(process.env.AWS_LAMBDA_FUNCTION_NAME ? 'https://github.com/Sparticuz/chromium/releases/download/v123.0.1/chromium-v123.0.1-pack.tar' : undefined),
       headless: true,
     });
     
@@ -47,12 +45,10 @@ module.exports = async (req, res) => {
     console.log(`Navegando para a página de login: ${loginUrl}`);
     await page.goto(loginUrl, { waitUntil: 'networkidle' });
 
-    // Resolvendo o CAPTCHA
     const siteKey = await page.locator('.g-recaptcha').getAttribute('data-sitekey');
     const captchaToken = await resolverCaptcha(siteKey, loginUrl, CAPTCHA_API_KEY);
     await page.evaluate(token => { document.getElementById('g-recaptcha-response').value = token; }, captchaToken);
     
-    // Preenchendo credenciais e fazendo login
     console.log('Preenchendo credenciais de login...');
     await page.locator('#email').fill(OBAOBA_EMAIL);
     await page.locator('#password').fill(OBAOBA_SENHA);
@@ -62,15 +58,12 @@ module.exports = async (req, res) => {
     await page.waitForURL('**/painel', { timeout: 30000 });
     console.log('Login realizado com sucesso! Navegando para a lista de produtos...');
 
-    // Navegar para a página de produtos (ajuste a URL se for diferente)
     await page.goto('https://app.obaobamix.com.br/admin/products');
 
-    // Aguardar a tabela ser carregada dinamicamente
     const seletorTabela = 'table.datatable-Product tbody tr';
     await page.waitForSelector(seletorTabela, { timeout: 60000 });
     console.log('Tabela de produtos carregada. Extraindo dados...');
 
-    // Extrair os dados da tabela
     const produtos = await page.$$eval(seletorTabela, rows =>
       rows.map(row => {
         const columns = row.querySelectorAll('td');
@@ -83,7 +76,6 @@ module.exports = async (req, res) => {
     );
     console.log(`Extração concluída. ${produtos.length} produtos encontrados.`);
     
-    // Retorna os dados em formato JSON
     res.status(200).json({
         message: 'Produtos extraídos com sucesso!',
         totalProdutos: produtos.length,
