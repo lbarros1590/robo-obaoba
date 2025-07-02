@@ -100,6 +100,6 @@ module.exports = async (req, res) => {
       await browser.close();
       console.log('Navegador fechado.');
     }
-    // Forçando nova atualização
+ 
   }
 };
