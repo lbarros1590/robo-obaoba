@@ -133,4 +133,3 @@ async function resolverCaptcha(siteKey, pageUrl, apiKey) {
 }
 
 module.exports = obaobaSync;
-
