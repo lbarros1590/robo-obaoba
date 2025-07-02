@@ -4,11 +4,14 @@
   "description": "Robô para extrair dados da Oba Oba Mix",
   "main": "api/sync.js",
   "scripts": {
-    "vercel-build": "apt-get update && apt-get install -y libnss3 libasound2 libatk-bridge2.0-0 libcups2 libgtk-3-0 libgbm1 libxss1"
+    "build": "playwright install --with-deps"
   },
   "dependencies": {
     "@sparticuz/chromium": "123.0.1",
     "axios": "^1.6.8",
     "playwright-core": "1.44.0"
+  },
+  "devDependencies": {
+    "playwright": "1.44.0"
   }
 }
