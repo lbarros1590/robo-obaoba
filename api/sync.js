@@ -41,36 +41,57 @@ async function obaobaSync() {
     const seletorTabela = 'table.datatable-Product tbody tr';
     console.log('Aguardando a tabela de produtos carregar...');
     await page.waitForSelector(seletorTabela, { timeout: 60000 });
-    console.log('Tabela de produtos carregada. Extraindo dados...');
+    
+    // **** NOVA LÓGICA DE PAGINAÇÃO ****
+    let todosOsProdutos = [];
+    let paginaAtual = 1;
 
-    // **** LÓGICA DE EXTRAÇÃO CORRIGIDA ****
-    const produtos = await page.$$eval(seletorTabela, rows =>
-      rows.map(row => {
-        const columns = row.querySelectorAll('td');
-        if (columns.length < 7) return null; // Ignora linhas malformadas
+    while (true) {
+        console.log(`Extraindo dados da página ${paginaAtual}...`);
+        await page.waitForSelector(seletorTabela, { state: 'visible', timeout: 60000 });
 
-        const nome = columns[2]?.innerText.trim();
-        const precoText = columns[5]?.innerText.trim();
-        const preco = precoText.replace('R$', '').replace(',', '.').trim();
+        const produtosDaPagina = await page.$$eval(seletorTabela, rows =>
+            rows.map(row => {
+                const columns = row.querySelectorAll('td');
+                if (columns.length < 7) return null;
+
+                const sku = columns[0]?.innerText.trim();
+                const nome = columns[2]?.innerText.trim();
+                const precoText = columns[5]?.innerText.trim();
+                const preco = precoText.replace('R$', '').replace(',', '.').trim();
+                
+                const estoqueElement = columns[6]?.querySelector('span[data-original-title]');
+                const estoqueTitle = estoqueElement ? estoqueElement.getAttribute('data-original-title') : '0';
+                const estoque = parseInt(estoqueTitle) || 0;
+
+                return { sku, nome, estoque, preco };
+            }).filter(p => p !== null)
+        );
         
-        // Lógica correta para pegar o estoque do atributo 'data-original-title'
-        const estoqueElement = columns[6]?.querySelector('span[data-original-title]');
-        const estoqueTitle = estoqueElement ? estoqueElement.getAttribute('data-original-title') : '0';
-        const estoque = parseInt(estoqueTitle) || 0;
+        todosOsProdutos.push(...produtosDaPagina);
+        console.log(`Encontrados ${produtosDaPagina.length} produtos nesta página. Total acumulado: ${todosOsProdutos.length}`);
 
-        return {
-          nome: nome,
-          estoque: estoque,
-          preco: preco,
-        };
-      }).filter(p => p !== null) // Remove as linhas que não puderam ser lidas
-    );
-    console.log(`Extração concluída. ${produtos.length} produtos encontrados.`);
+        // Procura pelo botão "Próximo" que NÃO está desativado
+        const proximoBotao = page.locator('li.next:not(.disabled) a');
+
+        if (await proximoBotao.count() > 0) {
+            console.log("Botão 'Próximo' encontrado. Clicando...");
+            await proximoBotao.click();
+            // Espera um pouco para a tabela recarregar com os novos dados via AJAX
+            await page.waitForTimeout(2000); 
+            paginaAtual++;
+        } else {
+            console.log("Não há mais páginas. Finalizando extração.");
+            break; // Sai do loop se não houver mais botão "Próximo" ativo
+        }
+    }
+
+    console.log(`Extração final concluída. Total de ${todosOsProdutos.length} produtos encontrados em todas as páginas.`);
     
     return {
-        message: 'Produtos extraídos com sucesso!',
-        totalProdutos: produtos.length,
-        produtos: produtos,
+        message: 'Todos os produtos foram extraídos com sucesso!',
+        totalProdutos: todosOsProdutos.length,
+        produtos: todosOsProdutos,
     };
 
   } catch (error) {
@@ -85,6 +106,7 @@ async function obaobaSync() {
 }
 
 async function resolverCaptcha(siteKey, pageUrl, apiKey) {
+    // Código do resolverCaptcha continua o mesmo
     console.log('Enviando CAPTCHA para resolução...');
     const res = await axios.post(`http://2captcha.com/in.php`, null, { params: { key: apiKey, method: 'userrecaptcha', googlekey: siteKey, pageurl: pageUrl, json: 1 } });
     const requestId = res.data.request;
