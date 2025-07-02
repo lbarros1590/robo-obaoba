@@ -42,7 +42,7 @@ async function obaobaSync() {
     console.log('Aguardando a tabela de produtos carregar...');
     await page.waitForSelector(seletorTabela, { timeout: 60000 });
     
-    // **** NOVA LÓGICA DE PAGINAÇÃO ****
+    // Lógica de Paginação para carregar todos os itens
     let todosOsProdutos = [];
     let paginaAtual = 1;
 
@@ -56,6 +56,8 @@ async function obaobaSync() {
                 if (columns.length < 7) return null;
 
                 const sku = columns[0]?.innerText.trim();
+                const fotoElement = columns[1]?.querySelector('img');
+                const foto = fotoElement ? fotoElement.src : '';
                 const nome = columns[2]?.innerText.trim();
                 const precoText = columns[5]?.innerText.trim();
                 const preco = precoText.replace('R$', '').replace(',', '.').trim();
@@ -64,7 +66,7 @@ async function obaobaSync() {
                 const estoqueTitle = estoqueElement ? estoqueElement.getAttribute('data-original-title') : '0';
                 const estoque = parseInt(estoqueTitle) || 0;
 
-                return { sku, nome, estoque, preco };
+                return { sku, foto, nome, estoque, preco };
             }).filter(p => p !== null)
         );
         
@@ -77,12 +79,11 @@ async function obaobaSync() {
         if (await proximoBotao.count() > 0) {
             console.log("Botão 'Próximo' encontrado. Clicando...");
             await proximoBotao.click();
-            // Espera um pouco para a tabela recarregar com os novos dados via AJAX
             await page.waitForTimeout(2000); 
             paginaAtual++;
         } else {
             console.log("Não há mais páginas. Finalizando extração.");
-            break; // Sai do loop se não houver mais botão "Próximo" ativo
+            break; 
         }
     }
 
@@ -106,7 +107,6 @@ async function obaobaSync() {
 }
 
 async function resolverCaptcha(siteKey, pageUrl, apiKey) {
-    // Código do resolverCaptcha continua o mesmo
     console.log('Enviando CAPTCHA para resolução...');
     const res = await axios.post(`http://2captcha.com/in.php`, null, { params: { key: apiKey, method: 'userrecaptcha', googlekey: siteKey, pageurl: pageUrl, json: 1 } });
     const requestId = res.data.request;
