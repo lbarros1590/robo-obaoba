@@ -32,14 +32,10 @@ async function obaobaSync() {
     console.log('Realizando o clique de login...');
     await page.locator('button[type="submit"]').click();
 
-    // **** CORREÇÃO PRINCIPAL ****
-    // Esperamos pelo redirecionamento para /admin, que você informou ser a página correta.
     console.log('Aguardando redirecionamento para o painel de administração...');
     await page.waitForURL('**/admin', { timeout: 60000 });
     console.log('Login realizado com sucesso! Acessando a página de produtos...');
 
-    // **** SEGUNDA CORREÇÃO ****
-    // Navegamos explicitamente para a página de produtos que você indicou.
     await page.goto('https://app.obaobamix.com.br/admin/products');
 
     const seletorTabela = 'table.datatable-Product tbody tr';
@@ -47,15 +43,27 @@ async function obaobaSync() {
     await page.waitForSelector(seletorTabela, { timeout: 60000 });
     console.log('Tabela de produtos carregada. Extraindo dados...');
 
+    // **** LÓGICA DE EXTRAÇÃO CORRIGIDA ****
     const produtos = await page.$$eval(seletorTabela, rows =>
       rows.map(row => {
         const columns = row.querySelectorAll('td');
+        if (columns.length < 7) return null; // Ignora linhas malformadas
+
+        const nome = columns[2]?.innerText.trim();
+        const precoText = columns[5]?.innerText.trim();
+        const preco = precoText.replace('R$', '').replace(',', '.').trim();
+        
+        // Lógica correta para pegar o estoque do atributo 'data-original-title'
+        const estoqueElement = columns[6]?.querySelector('span[data-original-title]');
+        const estoqueTitle = estoqueElement ? estoqueElement.getAttribute('data-original-title') : '0';
+        const estoque = parseInt(estoqueTitle) || 0;
+
         return {
-          nome: columns[1]?.innerText.trim(),
-          estoque: parseInt(columns[2]?.innerText.trim(), 10) || 0,
-          preco: columns[3]?.innerText.trim().replace('R$', '').replace(',', '.').trim(),
+          nome: nome,
+          estoque: estoque,
+          preco: preco,
         };
-      })
+      }).filter(p => p !== null) // Remove as linhas que não puderam ser lidas
     );
     console.log(`Extração concluída. ${produtos.length} produtos encontrados.`);
     
@@ -77,7 +85,6 @@ async function obaobaSync() {
 }
 
 async function resolverCaptcha(siteKey, pageUrl, apiKey) {
-    // Código do resolverCaptcha continua o mesmo
     console.log('Enviando CAPTCHA para resolução...');
     const res = await axios.post(`http://2captcha.com/in.php`, null, { params: { key: apiKey, method: 'userrecaptcha', googlekey: siteKey, pageurl: pageUrl, json: 1 } });
     const requestId = res.data.request;
