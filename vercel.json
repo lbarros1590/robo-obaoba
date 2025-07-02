@@ -5,5 +5,11 @@
       "src": "api/sync.js",
       "use": "@vercel/node"
     }
+  ],
+  "routes": [
+    {
+      "src": "/api/sync",
+      "dest": "/api/sync.js"
+    }
   ]
 }
