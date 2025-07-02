@@ -3,15 +3,9 @@
   "version": "1.0.0",
   "description": "Robô para extrair dados da Oba Oba Mix",
   "main": "api/sync.js",
-  "scripts": {
-    "build": "playwright install --with-deps"
-  },
   "dependencies": {
-    "@sparticuz/chromium": "123.0.1",
+    "@sparticuz/chromium": "v119.0.0",
     "axios": "^1.6.8",
-    "playwright-core": "1.44.0"
-  },
-  "devDependencies": {
-    "playwright": "1.44.0"
+    "playwright-core": "1.40.0"
   }
 }
