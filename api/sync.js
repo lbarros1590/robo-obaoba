@@ -37,7 +37,7 @@ module.exports = async (req, res) => {
     browser = await playwright.chromium.launch({
       args: chromium.args,
       executablePath: await chromium.executablePath(process.env.AWS_LAMBDA_FUNCTION_NAME ? 'https://github.com/Sparticuz/chromium/releases/download/v123.0.1/chromium-v123.0.1-pack.tar' : undefined),
-      headless: chromium.headless,
+      headless: true,
     });
     
     const context = await browser.newContext({ userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36' });
