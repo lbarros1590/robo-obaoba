@@ -42,9 +42,10 @@ async function obaobaSync() {
     console.log('Aguardando a tabela de produtos carregar...');
     await page.waitForSelector(seletorTabela, { timeout: 60000 });
     
-    // Lógica de Paginação para carregar todos os itens
+    // Lógica de Paginação com Limite
     let todosOsProdutos = [];
     let paginaAtual = 1;
+    const LIMITE_DE_ITENS = 10; // **** NOSSO LIMITE ****
 
     while (true) {
         console.log(`Extraindo dados da página ${paginaAtual}...`);
@@ -73,7 +74,13 @@ async function obaobaSync() {
         todosOsProdutos.push(...produtosDaPagina);
         console.log(`Encontrados ${produtosDaPagina.length} produtos nesta página. Total acumulado: ${todosOsProdutos.length}`);
 
-        // Procura pelo botão "Próximo" que NÃO está desativado
+        // **** VERIFICAÇÃO DO LIMITE ****
+        if (todosOsProdutos.length >= LIMITE_DE_ITENS) {
+            console.log(`Limite de ${LIMITE_DE_ITENS} itens atingido. Finalizando extração.`);
+            todosOsProdutos = todosOsProdutos.slice(0, LIMITE_DE_ITENS); // Garante que teremos exatamente 10 itens
+            break; 
+        }
+
         const proximoBotao = page.locator('li.next:not(.disabled) a');
 
         if (await proximoBotao.count() > 0) {
@@ -87,10 +94,10 @@ async function obaobaSync() {
         }
     }
 
-    console.log(`Extração final concluída. Total de ${todosOsProdutos.length} produtos encontrados em todas as páginas.`);
+    console.log(`Extração final concluída. Total de ${todosOsProdutos.length} produtos encontrados.`);
     
     return {
-        message: 'Todos os produtos foram extraídos com sucesso!',
+        message: 'Produtos extraídos com sucesso!',
         totalProdutos: todosOsProdutos.length,
         produtos: todosOsProdutos,
     };
@@ -126,3 +133,4 @@ async function resolverCaptcha(siteKey, pageUrl, apiKey) {
 }
 
 module.exports = obaobaSync;
+
