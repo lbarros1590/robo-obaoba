@@ -4,7 +4,7 @@ const axios = require('axios');
 
 async function obaobaSync() {
   let browser = null;
-  let page; // Definimos a 'page' aqui para que ela seja acessível no bloco catch
+  let page; 
   try {
     const { OBAOBA_EMAIL, OBAOBA_SENHA, CAPTCHA_API_KEY } = process.env;
 
@@ -33,7 +33,6 @@ async function obaobaSync() {
     console.log('Realizando o clique de login...');
     await page.locator('button[type="submit"]').click();
 
-    // AUMENTAMOS O TEMPO DE ESPERA E COLOCAMOS O ERRO EM UM BLOCO TRY/CATCH SEPARADO
     await page.waitForURL('**/painel', { timeout: 60000 });
     console.log('Login realizado com sucesso! Navegando para a lista de produtos...');
 
@@ -64,13 +63,29 @@ async function obaobaSync() {
   } catch (error) {
     console.error('Ocorreu um erro durante a execução do robô:', error.message);
 
-    // **** NOSSO DETETIVE ****
-    // Se o erro for de timeout após o login, vamos capturar o HTML da página
+    // **** NOSSO DETETIVE ESPECIALISTA (v3) ****
     if (page && error.name === 'TimeoutError') {
-      console.log("================== DEBUG: CONTEÚDO DA PÁGINA DE FALHA ==================");
-      const pageContent = await page.content();
-      console.log(pageContent);
-      console.log("========================================================================");
+      console.log("================== INICIANDO DEBUG PÓS-TIMEOUT ==================");
+      try {
+        // Espera 1 segundo para qualquer mensagem de erro aparecer na tela
+        await page.waitForTimeout(1000);
+        
+        // Tenta encontrar um elemento de erro comum na página
+        const errorElement = page.locator('.alert, .alert-danger, .invalid-feedback, [class*="error"], .text-danger');
+        
+        if (await errorElement.count() > 0) {
+            const errorMessage = await errorElement.first().textContent();
+            console.log("!!! MENSAGEM DE ERRO ENCONTRADA NA PÁGINA !!!");
+            console.log(errorMessage.trim());
+        } else {
+            console.log("Nenhuma mensagem de erro padrão foi encontrada na página. Tentando capturar o HTML como plano B.");
+            const pageContent = await page.content();
+            console.log("Conteúdo HTML da página de falha:", pageContent);
+        }
+      } catch (debugError) {
+          console.error("ERRO AO TENTAR DEPURAR A PÁGINA:", debugError.message);
+      }
+      console.log("================== FIM DO DEBUG ==================");
     }
     
     throw error;
@@ -82,27 +97,24 @@ async function obaobaSync() {
   }
 }
 
-// Função interna para o captcha
 async function resolverCaptcha(siteKey, pageUrl, apiKey) {
-  console.log('Enviando CAPTCHA para resolução...');
-  const res = await axios.post(`http://2captcha.com/in.php`, null, {
-    params: { key: apiKey, method: 'userrecaptcha', googlekey: siteKey, pageurl: pageUrl, json: 1 },
-  });
-  const requestId = res.data.request;
-  if (res.data.status !== 1) throw new Error(`Erro ao enviar CAPTCHA para 2Captcha: ${res.data.request}`);
-  console.log(`ID da requisição do CAPTCHA: ${requestId}`);
-
-  let result;
-  while (!result) {
-    await new Promise(resolve => setTimeout(resolve, 5000));
-    console.log('Aguardando resolução do CAPTCHA...');
-    const check = await axios.get(`http://2captcha.com/res.php`, { params: { key: apiKey, action: 'get', id: requestId, json: 1 } });
-    if (check.data.status === 1) {
-      result = check.data.request;
-      console.log('CAPTCHA resolvido com sucesso!');
+    // Código do resolverCaptcha continua o mesmo
+    console.log('Enviando CAPTCHA para resolução...');
+    const res = await axios.post(`http://2captcha.com/in.php`, null, { params: { key: apiKey, method: 'userrecaptcha', googlekey: siteKey, pageurl: pageUrl, json: 1 } });
+    const requestId = res.data.request;
+    if (res.data.status !== 1) throw new Error(`Erro ao enviar CAPTCHA para 2Captcha: ${res.data.request}`);
+    console.log(`ID da requisição do CAPTCHA: ${requestId}`);
+    let result;
+    while (!result) {
+        await new Promise(resolve => setTimeout(resolve, 5000));
+        console.log('Aguardando resolução do CAPTCHA...');
+        const check = await axios.get(`http://2captcha.com/res.php`, { params: { key: apiKey, action: 'get', id: requestId, json: 1 } });
+        if (check.data.status === 1) {
+            result = check.data.request;
+            console.log('CAPTCHA resolvido com sucesso!');
+        }
     }
-  }
-  return result;
+    return result;
 }
 
 module.exports = obaobaSync;
