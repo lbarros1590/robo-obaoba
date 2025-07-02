@@ -2,29 +2,8 @@ const playwright = require('playwright-core');
 const chromium = require('@sparticuz/chromium');
 const axios = require('axios');
 
-async function resolverCaptcha(siteKey, pageUrl, apiKey) {
-  console.log('Enviando CAPTCHA para resolução...');
-  const res = await axios.post(`http://2captcha.com/in.php`, null, {
-    params: { key: apiKey, method: 'userrecaptcha', googlekey: siteKey, pageurl: pageUrl, json: 1 },
-  });
-  const requestId = res.data.request;
-  if (res.data.status !== 1) throw new Error(`Erro ao enviar CAPTCHA para 2Captcha: ${res.data.request}`);
-  console.log(`ID da requisição do CAPTCHA: ${requestId}`);
-
-  let result;
-  while (!result) {
-    await new Promise(resolve => setTimeout(resolve, 5000));
-    console.log('Aguardando resolução do CAPTCHA...');
-    const check = await axios.get(`http://2captcha.com/res.php`, { params: { key: apiKey, action: 'get', id: requestId, json: 1 } });
-    if (check.data.status === 1) {
-      result = check.data.request;
-      console.log('CAPTCHA resolvido com sucesso!');
-    }
-  }
-  return result;
-}
-
-module.exports = async (req, res) => {
+// A lógica principal do robô, agora dentro de uma função nomeada
+async function obaobaSync() {
   let browser = null;
   try {
     const { OBAOBA_EMAIL, OBAOBA_SENHA, CAPTCHA_API_KEY } = process.env;
@@ -33,9 +12,9 @@ module.exports = async (req, res) => {
     browser = await playwright.chromium.launch({
       args: chromium.args,
       executablePath: await chromium.executablePath(),
-      headless: true, // <-- ESTA É A CORREÇÃO DEFINITIVA PARA O ERRO
+      headless: true,
     });
-    
+
     const context = await browser.newContext({ userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36' });
     const page = await context.newPage();
     const loginUrl = 'https://app.obaobamix.com.br/login';
@@ -46,11 +25,11 @@ module.exports = async (req, res) => {
     const siteKey = await page.locator('.g-recaptcha').getAttribute('data-sitekey');
     const captchaToken = await resolverCaptcha(siteKey, loginUrl, CAPTCHA_API_KEY);
     await page.evaluate(token => { document.getElementById('g-recaptcha-response').value = token; }, captchaToken);
-    
+
     console.log('Preenchendo credenciais de login...');
     await page.locator('#email').fill(OBAOBA_EMAIL);
     await page.locator('#password').fill(OBAOBA_SENHA);
-    
+
     console.log('Realizando o clique de login...');
     await page.locator('button[type="submit"]').click();
     await page.waitForURL('**/painel', { timeout: 30000 });
@@ -73,20 +52,49 @@ module.exports = async (req, res) => {
       })
     );
     console.log(`Extração concluída. ${produtos.length} produtos encontrados.`);
-    
-    res.status(200).json({
+
+    // Em vez de retornar uma resposta HTTP, a função agora retorna os dados
+    return {
         message: 'Produtos extraídos com sucesso!',
         totalProdutos: produtos.length,
         produtos: produtos,
-    });
+    };
 
   } catch (error) {
-    console.error('Ocorreu um erro durante a execução do robô:', error);
-    res.status(500).json({ message: 'Falha na execução do robô.', error: error.message });
+    console.error('Ocorreu um erro durante a execução do robô:', error.message);
+    // Lançamos o erro para que o server.js possa capturá-lo
+    throw error;
   } finally {
     if (browser) {
       await browser.close();
       console.log('Navegador fechado.');
     }
   }
-};
+}
+
+// Função interna para o captcha
+async function resolverCaptcha(siteKey, pageUrl, apiKey) {
+  // (O código do resolverCaptcha continua o mesmo de antes, não precisa colar de novo se já estiver aí)
+  console.log('Enviando CAPTCHA para resolução...');
+  const res = await axios.post(`http://2captcha.com/in.php`, null, {
+    params: { key: apiKey, method: 'userrecaptcha', googlekey: siteKey, pageurl: pageUrl, json: 1 },
+  });
+  const requestId = res.data.request;
+  if (res.data.status !== 1) throw new Error(`Erro ao enviar CAPTCHA para 2Captcha: ${res.data.request}`);
+  console.log(`ID da requisição do CAPTCHA: ${requestId}`);
+
+  let result;
+  while (!result) {
+    await new Promise(resolve => setTimeout(resolve, 5000));
+    console.log('Aguardando resolução do CAPTCHA...');
+    const check = await axios.get(`http://2captcha.com/res.php`, { params: { key: apiKey, action: 'get', id: requestId, json: 1 } });
+    if (check.data.status === 1) {
+      result = check.data.request;
+      console.log('CAPTCHA resolvido com sucesso!');
+    }
+  }
+  return result;
+}
+
+// Exportamos apenas a função principal para ser usada por outros arquivos
+module.exports = obaobaSync;
