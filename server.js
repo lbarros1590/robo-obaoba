@@ -5,7 +5,15 @@ const obaobaSync = require('./api/sync');
 const app = express();
 const PORT = process.env.PORT || 10000;
 
-app.use(cors());
+// --- CONFIGURAÇÃO DE CORS EXPLÍCITA E ROBUSTA ---
+const corsOptions = {
+  origin: '*', // Permite requisições de qualquer origem. Para produção, você pode restringir ao seu domínio do Lovable.
+  methods: ['GET', 'POST', 'OPTIONS'], // Permite os métodos necessários
+  allowedHeaders: ['Content-Type', 'Authorization'], // Permite os headers que estamos usando
+};
+app.use(cors(corsOptions));
+// --- FIM DA CONFIGURAÇÃO DE CORS ---
+
 app.use(express.json());
 
 // Middleware de segurança para verificar nosso token secreto
