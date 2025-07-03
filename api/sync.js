@@ -3,10 +3,8 @@ const chromium = require('@sparticuz/chromium');
 const axios = require('axios');
 const { createClient } = require('@supabase/supabase-js');
 
-// A função agora recebe o userId para saber quem está fazendo a sincronização
 async function obaobaSync(email, password, userId) {
   let browser = null;
-  // Inicializa o cliente do Supabase com as chaves do ambiente da Render
   const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 
   try {
@@ -25,53 +23,42 @@ async function obaobaSync(email, password, userId) {
     console.log('Realizando login...');
     await performLogin(page, email, password, CAPTCHA_API_KEY);
     
-    console.log('Navegando para a página de produtos...');
+    console.log('Acessando a página de produtos...');
     await page.goto('https://app.obaobamix.com.br/admin/products');
     
-    console.log('Extraindo todos os produtos de todas as páginas...');
+    console.log('Extraindo todos os produtos...');
     const todosOsProdutosExtraidos = await scrapeAllProducts(page);
     
     console.log(`Extração concluída. Total de ${todosOsProdutosExtraidos.length} produtos encontrados.`);
     
-    // --- LÓGICA DE BANCO DE DADOS ---
     if (todosOsProdutosExtraidos.length > 0) {
         console.log('Iniciando sincronização com o banco de dados Supabase...');
         
-        // Adiciona o user_id a cada produto antes de salvar
         const produtosParaSalvar = todosOsProdutosExtraidos.map(p => ({ ...p, user_id: userId }));
 
-        // Passo 1: Upsert (inserir ou atualizar) todos os produtos
-        // Nota: O onConflict usa 'sku' e 'user_id' se você criou uma chave única composta, ou só 'sku' se a unicidade for apenas no SKU.
+        // Usamos a nova 'variant_id' como a chave para o upsert
         const { error: upsertError } = await supabase
             .from('products')
-            .upsert(produtosParaSalvar, { onConflict: 'sku' }); 
+            .upsert(produtosParaSalvar, { onConflict: 'variant_id' }); 
 
         if (upsertError) {
             throw new Error(`Erro ao salvar produtos no Supabase: ${upsertError.message}`);
         }
         console.log(`${produtosParaSalvar.length} produtos foram salvos ou atualizados no banco.`);
 
-        // Passo 2: Desativar produtos que não vieram na lista
-        const receivedSkus = todosOsProdutosExtraidos.map(p => `'${p.sku}'`); // Coloca aspas para a query SQL
+        const receivedVariantIds = todosOsProdutosExtraidos.map(p => `'${p.variant_id}'`);
         const { error: deactivateError } = await supabase
             .from('products')
             .update({ is_active: false })
             .eq('user_id', userId)
-            .not('sku', 'in', `(${receivedSkus.join(',')})`);
+            .not('variant_id', 'in', `(${receivedVariantIds.join(',')})`);
         
-        if (deactivateError) {
-            console.error('Erro ao desativar produtos antigos:', deactivateError.message);
-        } else {
-            console.log('Produtos antigos foram desativados com sucesso.');
-        }
+        if (deactivateError) console.error('Erro ao desativar produtos antigos:', deactivateError.message);
+        else console.log('Produtos antigos foram desativados com sucesso.');
     }
     
     console.log('Sincronização com o banco de dados concluída!');
-
-    return {
-        message: 'Sincronização completa realizada com sucesso!',
-        totalProdutos: todosOsProdutosExtraidos.length
-    };
+    return { message: 'Sincronização completa realizada com sucesso!', totalProdutos: todosOsProdutosExtraidos.length };
 
   } catch (error) {
     console.error('Ocorreu um erro fatal durante a execução do robô:', error.message);
@@ -84,9 +71,10 @@ async function obaobaSync(email, password, userId) {
   }
 }
 
-// --- Funções Auxiliares (Helpers) ---
+// --- Funções Auxiliares ---
 
 async function performLogin(page, email, password, captchaKey) {
+    // ... (código do login continua igual)
     await page.goto('https://app.obaobamix.com.br/login', { waitUntil: 'networkidle' });
     const siteKey = await page.locator('.g-recaptcha').getAttribute('data-sitekey');
     const captchaToken = await resolveCaptcha(siteKey, page.url(), captchaKey);
@@ -116,30 +104,29 @@ async function scrapeAllProducts(page) {
                 const stock = parseInt(columns[6]?.querySelector('span')?.getAttribute('data-original-title')) || 0;
                 const purchase_price = parseFloat(columns[5]?.innerText.trim().replace('R$', '').replace(',', '.')) || 0;
                 
-                return {
-                    sku: sku,
-                    title: title,
-                    stock: stock,
-                    purchase_price: purchase_price,
-                    is_active: true // Sempre ativo quando vem da extração
-                };
-            }).filter(p => p && p.sku) // Garante que o produto e o SKU não são nulos
+                // **** LÓGICA PARA CRIAR O ID ÚNICO DA VARIAÇÃO ****
+                // Ex: "OOM-123-cabo-15-metros"
+                const variant_id = `${sku}-${title.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-')}`;
+
+                return { sku, title, stock, purchase_price, variant_id, is_active: true };
+            }).filter(p => p && p.sku)
         );
         todosOsProdutos.push(...produtosDaPagina);
 
         const proximoBotao = page.locator('li.next:not(.disabled) a');
         if (await proximoBotao.count() > 0) {
             await proximoBotao.click();
-            await page.waitForTimeout(2500); // Espera um pouco para a tabela recarregar
+            await page.waitForTimeout(2500);
             paginaAtual++;
         } else {
-            break; // Sai do loop
+            break;
         }
     }
     return todosOsProdutos;
 }
 
 async function resolveCaptcha(siteKey, pageUrl, apiKey) {
+    // ... (código do captcha continua igual)
     const res = await axios.post(`http://2captcha.com/in.php`, null, { params: { key: apiKey, method: 'userrecaptcha', googlekey: siteKey, pageurl: pageUrl, json: 1 } });
     const requestId = res.data.request;
     if (res.data.status !== 1) throw new Error(`Erro ao enviar CAPTCHA: ${res.data.request}`);
