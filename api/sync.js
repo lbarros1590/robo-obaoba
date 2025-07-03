@@ -2,10 +2,12 @@ const playwright = require('playwright-core');
 const chromium = require('@sparticuz/chromium');
 const axios = require('axios');
 
-async function obaobaSync() {
+// A função agora recebe email e senha como parâmetros
+async function obaobaSync(email, password) { 
   let browser = null;
   try {
-    const { OBAOBA_EMAIL, OBAOBA_SENHA, CAPTCHA_API_KEY } = process.env;
+    // A chave do captcha ainda vem das variáveis de ambiente
+    const { CAPTCHA_API_KEY } = process.env; 
 
     console.log('Iniciando navegador headless...');
     browser = await playwright.chromium.launch({
@@ -13,7 +15,7 @@ async function obaobaSync() {
       executablePath: await chromium.executablePath(),
       headless: true,
     });
-    
+
     const context = await browser.newContext({ userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36' });
     const page = await context.newPage();
     const loginUrl = 'https://app.obaobamix.com.br/login';
@@ -24,11 +26,12 @@ async function obaobaSync() {
     const siteKey = await page.locator('.g-recaptcha').getAttribute('data-sitekey');
     const captchaToken = await resolverCaptcha(siteKey, loginUrl, CAPTCHA_API_KEY);
     await page.evaluate(token => { document.getElementById('g-recaptcha-response').value = token; }, captchaToken);
-    
+
     console.log('Preenchendo credenciais de login...');
-    await page.locator('#email').fill(OBAOBA_EMAIL);
-    await page.locator('#password').fill(OBAOBA_SENHA);
-    
+    // Usa as credenciais recebidas como parâmetro
+    await page.locator('#email').fill(email);
+    await page.locator('#password').fill(password);
+
     console.log('Realizando o clique de login...');
     await page.locator('button[type="submit"]').click();
 
@@ -41,48 +44,31 @@ async function obaobaSync() {
     const seletorTabela = 'table.datatable-Product tbody tr';
     console.log('Aguardando a tabela de produtos carregar...');
     await page.waitForSelector(seletorTabela, { timeout: 60000 });
-    
-    // Lógica de Paginação com Limite
+
     let todosOsProdutos = [];
     let paginaAtual = 1;
-    const LIMITE_DE_ITENS = 10; // **** NOSSO LIMITE ****
-
     while (true) {
         console.log(`Extraindo dados da página ${paginaAtual}...`);
         await page.waitForSelector(seletorTabela, { state: 'visible', timeout: 60000 });
-
         const produtosDaPagina = await page.$$eval(seletorTabela, rows =>
             rows.map(row => {
                 const columns = row.querySelectorAll('td');
                 if (columns.length < 7) return null;
-
                 const sku = columns[0]?.innerText.trim();
                 const fotoElement = columns[1]?.querySelector('img');
                 const foto = fotoElement ? fotoElement.src : '';
                 const nome = columns[2]?.innerText.trim();
                 const precoText = columns[5]?.innerText.trim();
                 const preco = precoText.replace('R$', '').replace(',', '.').trim();
-                
                 const estoqueElement = columns[6]?.querySelector('span[data-original-title]');
                 const estoqueTitle = estoqueElement ? estoqueElement.getAttribute('data-original-title') : '0';
                 const estoque = parseInt(estoqueTitle) || 0;
-
                 return { sku, foto, nome, estoque, preco };
             }).filter(p => p !== null)
         );
-        
         todosOsProdutos.push(...produtosDaPagina);
         console.log(`Encontrados ${produtosDaPagina.length} produtos nesta página. Total acumulado: ${todosOsProdutos.length}`);
-
-        // **** VERIFICAÇÃO DO LIMITE ****
-        if (todosOsProdutos.length >= LIMITE_DE_ITENS) {
-            console.log(`Limite de ${LIMITE_DE_ITENS} itens atingido. Finalizando extração.`);
-            todosOsProdutos = todosOsProdutos.slice(0, LIMITE_DE_ITENS); // Garante que teremos exatamente 10 itens
-            break; 
-        }
-
         const proximoBotao = page.locator('li.next:not(.disabled) a');
-
         if (await proximoBotao.count() > 0) {
             console.log("Botão 'Próximo' encontrado. Clicando...");
             await proximoBotao.click();
@@ -93,11 +79,10 @@ async function obaobaSync() {
             break; 
         }
     }
+    console.log(`Extração final concluída. Total de ${todosOsProdutos.length} produtos encontrados em todas as páginas.`);
 
-    console.log(`Extração final concluída. Total de ${todosOsProdutos.length} produtos encontrados.`);
-    
     return {
-        message: 'Produtos extraídos com sucesso!',
+        message: 'Todos os produtos foram extraídos com sucesso!',
         totalProdutos: todosOsProdutos.length,
         produtos: todosOsProdutos,
     };
