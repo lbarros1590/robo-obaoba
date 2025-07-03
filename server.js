@@ -6,28 +6,33 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 app.use(cors());
-app.use(express.json()); // <-- Adicionado: Habilita o recebimento de dados em JSON
+app.use(express.json());
 
-// --- ROTA ALTERADA PARA POST ---
-app.post('/api/sync', async (req, res) => {
-  console.log('Recebida requisição para iniciar a sincronização...');
+// Middleware de verificação de segurança
+const checkAuth = (req, res, next) => {
+  const token = req.headers.authorization?.split(' ')[1]; // Pega o token do header 'Bearer SEU_TOKEN'
+  if (!token || token !== process.env.AUTH_SECRET_TOKEN) {
+    return res.status(401).json({ message: 'Acesso não autorizado' });
+  }
+  next(); // Se o token estiver correto, continua
+};
 
-  // Pega o e-mail e senha enviados pelo painel do Lovable
+// Usamos o middleware de segurança na nossa rota
+app.post('/api/sync', checkAuth, (req, res) => {
+  console.log('Recebida requisição para iniciar a sincronização em segundo plano...');
   const { email, password } = req.body;
-
   if (!email || !password) {
     return res.status(400).json({ message: 'E-mail e senha são obrigatórios.' });
   }
 
-  try {
-    // Passa o e-mail e a senha para a função do robô
-    const produtos = await obaobaSync(email, password); 
-    console.log('Sincronização concluída com sucesso.');
-    res.status(200).json(produtos);
-  } catch (error) {
-    console.error('Erro na rota /api/sync:', error.message);
-    res.status(500).json({ message: 'Falha ao executar a sincronização.', error: error.message });
-  }
+  // Dispara o robô e não espera (fire-and-forget)
+  obaobaSync(email, password).catch(err => {
+    console.error("Erro no trabalho em segundo plano:", err.message);
+  });
+
+  res.status(202).json({ 
+    message: 'Sincronização iniciada com sucesso! Os dados serão atualizados em alguns minutos.' 
+  });
 });
 
 app.get('/', (req, res) => {
