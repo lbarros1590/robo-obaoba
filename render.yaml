@@ -1,0 +1,5 @@
+services:
+  - type: worker # <-- AQUI definimos o tipo como Background Worker
+    name: robo-obaoba
+    env: docker
+    autoDeploy: true
