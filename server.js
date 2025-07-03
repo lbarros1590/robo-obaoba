@@ -1,34 +1,47 @@
-const parseArgs = require('minimist');
+const express = require('express');
+const cors = require('cors');
 const obaobaSync = require('./api/sync');
 
-console.log('============================================');
-console.log('== SERVIÇO DE SINCRONIZAÇÃO RENDER INICIADO ==');
-console.log('============================================');
+const app = express();
+const PORT = process.env.PORT || 10000;
 
-// Esta função lê os argumentos passados pela Render
-// Ex: --email="user@exemplo.com" --password="123" --userId="..."
-const args = parseArgs(process.argv.slice(2));
+app.use(cors());
+app.use(express.json());
 
-const { email, password, userId } = args;
+// Middleware de segurança para verificar nosso token secreto
+const checkAuth = (req, res, next) => {
+  const token = req.headers.authorization?.split(' ')[1];
+  if (!token || token !== process.env.AUTH_SECRET_TOKEN) {
+    return res.status(401).json({ message: 'Acesso não autorizado' });
+  }
+  next();
+};
 
-// Se os argumentos não foram passados, encerra com erro.
-if (!email || !password || !userId) {
-  console.error('ERRO CRÍTICO: E-mail, senha e userId são obrigatórios e não foram fornecidos como argumentos.');
-  process.exit(1); // Encerra o processo com código de erro
-}
+// Rota que o painel vai chamar
+app.post('/api/sync', checkAuth, (req, res) => {
+  console.log('Recebida requisição para iniciar a sincronização em segundo plano...');
+  const { email, password, userId } = req.body;
 
-console.log(`Iniciando sincronização para o usuário: ${userId}`);
+  if (!email || !password || !userId) {
+    console.error('Requisição recebida sem as credenciais completas.');
+    return res.status(400).json({ message: 'E-mail, senha e userId são obrigatórios.' });
+  }
 
-// Inicia o processo principal do robô
-obaobaSync(email, password, userId)
-  .then(result => {
-    console.log('✅ PROCESSO CONCLUÍDO COM SUCESSO!');
-    console.log('Mensagem:', result.message);
-    console.log('Total de produtos:', result.totalProdutos);
-    process.exit(0); // Encerra o processo com sucesso
-  })
-  .catch(err => {
-    console.error('❌ ERRO FATAL NO PROCESSO DE SINCRONIZAÇÃO:');
-    console.error(err);
-    process.exit(1); // Encerra o processo com erro
+  // Dispara o robô e NÃO espera pela resposta (fire-and-forget)
+  obaobaSync(email, password, userId).catch(err => {
+    console.error("ERRO FATAL no trabalho em segundo plano:", err.message);
   });
+
+  // Responde IMEDIATAMENTE para o painel
+  res.status(202).json({ 
+    message: 'Sincronização iniciada com sucesso! Os dados serão atualizados em alguns minutos.' 
+  });
+});
+
+app.get('/', (req, res) => {
+  res.send('Servidor do Robô ObaOba está no ar e pronto!');
+});
+
+app.listen(PORT, () => {
+  console.log(`Servidor rodando na porta ${PORT}`);
+});
