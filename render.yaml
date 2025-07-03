@@ -1,0 +1,5 @@
+services:
+  - type: worker
+    name: robo-obaoba
+    env: docker
+    autoDeploy: true
