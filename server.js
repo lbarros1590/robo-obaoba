@@ -8,25 +8,25 @@ const PORT = process.env.PORT || 3000;
 app.use(cors());
 app.use(express.json());
 
-// Middleware de verificação de segurança
 const checkAuth = (req, res, next) => {
-  const token = req.headers.authorization?.split(' ')[1]; // Pega o token do header 'Bearer SEU_TOKEN'
+  const token = req.headers.authorization?.split(' ')[1];
   if (!token || token !== process.env.AUTH_SECRET_TOKEN) {
     return res.status(401).json({ message: 'Acesso não autorizado' });
   }
-  next(); // Se o token estiver correto, continua
+  next();
 };
 
-// Usamos o middleware de segurança na nossa rota
 app.post('/api/sync', checkAuth, (req, res) => {
   console.log('Recebida requisição para iniciar a sincronização em segundo plano...');
-  const { email, password } = req.body;
-  if (!email || !password) {
-    return res.status(400).json({ message: 'E-mail e senha são obrigatórios.' });
+
+  // AGORA RECEBEMOS O userId JUNTO
+  const { email, password, userId } = req.body;
+  if (!email || !password || !userId) {
+    return res.status(400).json({ message: 'E-mail, senha e userId são obrigatórios.' });
   }
 
-  // Dispara o robô e não espera (fire-and-forget)
-  obaobaSync(email, password).catch(err => {
+  // E PASSAMOS O userId PARA A FUNÇÃO
+  obaobaSync(email, password, userId).catch(err => {
     console.error("Erro no trabalho em segundo plano:", err.message);
   });
 
