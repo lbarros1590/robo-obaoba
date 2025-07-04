@@ -5,7 +5,7 @@ const obaobaSync = require('./api/sync');
 const app = express();
 const PORT = process.env.PORT || 10000;
 
-// --- CONFIGURAÇÃO DE CORS EXPLÍCITA E ROBUSTA ---
+// --- CONFIGURAÇÃO DE CORS EXPLÍCita E ROBUSTA ---
 const corsOptions = {
   origin: '*', // Permite requisições de qualquer origem
   methods: ['GET', 'POST', 'OPTIONS'], // Permite os métodos necessários
@@ -16,6 +16,7 @@ app.use(cors(corsOptions));
 
 app.use(express.json());
 
+// Middleware de segurança para verificar nosso token secreto
 const checkAuth = (req, res, next) => {
   const token = req.headers.authorization?.split(' ')[1];
   if (!token || token !== process.env.AUTH_SECRET_TOKEN) {
@@ -24,14 +25,16 @@ const checkAuth = (req, res, next) => {
   next();
 };
 
+// Rota que o painel vai chamar
 app.post('/api/sync', checkAuth, (req, res) => {
   console.log('Recebida requisição para iniciar a sincronização em segundo plano...');
   const { email, password, userId } = req.body;
   if (!email || !password || !userId) {
+    console.error('Requisição recebida sem as credenciais completas.');
     return res.status(400).json({ message: 'E-mail, senha e userId são obrigatórios.' });
   }
 
-  // Dispara o robô e não espera (fire-and-forget)
+  // Dispara o robô e NÃO espera pela resposta (fire-and-forget)
   obaobaSync(email, password, userId).catch(err => {
     console.error("ERRO FATAL no trabalho em segundo plano:", err.message);
   });
