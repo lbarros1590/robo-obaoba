@@ -5,11 +5,12 @@ const obaobaSync = require('./api/sync');
 const app = express();
 const PORT = process.env.PORT || 10000;
 
-// --- CONFIGURAÇÃO DE CORS EXPLÍCita E ROBUSTA ---
+// --- CONFIGURAÇÃO DE CORS EXPLÍCITA E ROBUSTA ---
+// Esta é a correção para o "Erro de Rede"
 const corsOptions = {
   origin: '*', // Permite requisições de qualquer origem
   methods: ['GET', 'POST', 'OPTIONS'], // Permite os métodos necessários
-  allowedHeaders: ['Content-Type', 'Authorization'], // Permite os headers que estamos usando
+  allowedHeaders: ['Content-Type', 'Authorization'], // Permite os headers que o seu painel envia
 };
 app.use(cors(corsOptions));
 // --- FIM DA CONFIGURAÇÃO DE CORS ---
