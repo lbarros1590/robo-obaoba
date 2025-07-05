@@ -3,11 +3,9 @@ const chromium = require('@sparticuz/chromium');
 const axios = require('axios');
 const { createClient } = require('@supabase/supabase-js');
 
-// ... (código obaobaSync, scrapeAllProducts, resolveCaptcha continua o mesmo) ...
-// A única alteração é na função performLogin
-
 async function obaobaSync(email, password, userId) {
   let browser = null;
+  // ... (o início da função obaobaSync continua igual)
   const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
   try {
     const { CAPTCHA_API_KEY } = process.env;
@@ -18,11 +16,15 @@ async function obaobaSync(email, password, userId) {
     });
     const context = await browser.newContext({ userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36' });
     const page = await context.newPage();
+    
     console.log('Realizando login...');
-    await performLogin(page, email, password, CAPTCHA_API_KEY);
+    // A função performLogin agora tem o nosso detetive
+    await performLogin(page, email, password, CAPTCHA_API_KEY); 
+    
     console.log('Login e redirecionamento bem-sucedidos. Acessando página de produtos...');
     await page.goto('https://app.obaobamix.com.br/admin/products');
-    console.log('Extraindo todos os produtos...');
+    
+    // ... (o resto da lógica de extrair e salvar no banco continua a mesma) ...
     const todosOsProdutosExtraidos = await scrapeAllProducts(page);
     console.log(`Extração concluída. Total de ${todosOsProdutosExtraidos.length} produtos encontrados.`);
     if (todosOsProdutosExtraidos.length > 0) {
@@ -32,12 +34,12 @@ async function obaobaSync(email, password, userId) {
       if (upsertError) throw new Error(`Erro ao salvar produtos no Supabase: ${upsertError.message}`);
       console.log(`${produtosParaSalvar.length} produtos foram salvos ou atualizados no banco.`);
       const receivedVariantIds = todosOsProdutosExtraidos.map(p => `'${p.variant_id}'`);
-      const { error: deactivateError } = await supabase.from('products').update({ is_active: false }).eq('user_id', userId).not('variant_id', 'in', `(${receivedVariantIds.join(',')})`);
-      if (deactivateError) console.error('Erro ao desativar produtos antigos:', deactivateError.message);
-      else console.log('Produtos antigos foram desativados com sucesso.');
+      await supabase.from('products').update({ is_active: false }).eq('user_id', userId).not('variant_id', 'in', `(${receivedVariantIds.join(',')})`);
+      console.log('Produtos antigos foram desativados com sucesso.');
     }
     console.log('Sincronização com o banco de dados concluída!');
     return { message: 'Sincronização completa realizada com sucesso!', totalProdutos: todosOsProdutosExtraidos.length };
+
   } catch (error) {
     console.error('Ocorreu um erro fatal durante a execução do robô:', error.message);
     throw error;
@@ -62,8 +64,8 @@ async function performLogin(page, email, password, captchaKey) {
     
     try {
         console.log("Aguardando redirecionamento para a página '/admin'...");
-        await page.waitForURL('**/admin', { timeout: 30000 }); // Tempo de espera reduzido para teste
-        console.log('Login e redirecionamento para /admin bem-sucedidos.');
+        await page.waitForURL('**/admin', { timeout: 30000 }); // Tempo de espera um pouco menor para teste
+        console.log('Redirecionamento para /admin bem-sucedido.');
     } catch (e) {
         if (e.name === 'TimeoutError') {
             console.error("TIMEOUT! A página não redirecionou para '/admin' a tempo.");
