@@ -8,6 +8,7 @@ async function obaobaSync(email, password, userId) {
   const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
   try {
     const { CAPTCHA_API_KEY } = process.env;
+    console.log('Iniciando navegador...');
     browser = await playwright.chromium.launch({
       args: chromium.args,
       executablePath: await chromium.executablePath(),
@@ -15,75 +16,42 @@ async function obaobaSync(email, password, userId) {
     });
     const context = await browser.newContext({ userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36' });
     const page = await context.newPage();
-
+    
+    console.log('Realizando login...');
     await performLogin(page, email, password, CAPTCHA_API_KEY);
+    
+    console.log('Login e redirecionamento bem-sucedidos. Acessando página de produtos...');
     await page.goto('https://app.obaobamix.com.br/admin/products', { waitUntil: 'networkidle' });
-
+    
+    console.log('Extraindo todos os produtos de todas as páginas...');
     const todosOsProdutosExtraidos = await scrapeAllProducts(page);
-    console.log(`Extração concluída. Total de ${todosOsProdutosExtraidos.length} produtos encontrados.`);
+    console.log(`Extração bruta concluída. Total de ${todosOsProdutosExtraidos.length} produtos encontrados.`);
 
-    if (todosOsProdutosExtraidos.length > 0) {
-        console.log('Iniciando sincronização com o banco de dados Supabase...');
-
-        // Passo 1: Limpar e preparar os dados para o banco
-        const deDuplicatedProductsMap = new Map();
-        for (const product of todosOsProdutosExtraidos) {
-            if (product.variant_id) {
-                deDuplicatedProductsMap.set(product.variant_id, product);
-            }
-        }
-        const finalProductList = Array.from(deDuplicatedProductsMap.values());
-        console.log(`Lista final contém ${finalProductList.length} produtos únicos para salvar.`);
-
-        const produtosParaSalvar = finalProductList.map(p => ({
-            variant_id: p.variant_id,
-            sku: p.sku,
-            title: p.title,
-            stock: p.stock,
-            purchase_price: p.purchase_price,
-            is_active: true, // Garante que todos os produtos da lista estão ativos
-            user_id: userId
-        }));
-
-        // Passo 2: Upsert (inserir ou atualizar) todos os produtos
-        const { error: upsertError } = await supabase
-            .from('products')
-            .upsert(produtosParaSalvar, { onConflict: 'variant_id' }); 
-
-        if (upsertError) {
-            // Se o upsert falhar, mostre o erro detalhado no log
-            console.error("ERRO DETALHADO DO UPSERT:", upsertError);
-            throw new Error(`Erro ao salvar produtos no Supabase: ${upsertError.message}`);
-        }
-        console.log(`${produtosParaSalvar.length} produtos foram salvos ou atualizados no banco.`);
-
-        // Passo 3: Desativar produtos que não vieram na lista
-        const receivedVariantIds = finalProductList.map(p => p.variant_id);
-        const { data: productsToDeactivate, error: selectError } = await supabase
-            .from('products')
-            .select('variant_id')
-            .eq('user_id', userId)
-            .eq('is_active', true)
-            .not('variant_id', 'in', `(${receivedVariantIds.map(id => `"${id}"`).join(',')})`); // Garante formatação correta
-
-        if (selectError) {
-            console.error('Erro ao buscar produtos para desativar:', selectError.message);
-        } else if (productsToDeactivate && productsToDeactivate.length > 0) {
-            const idsToDeactivate = productsToDeactivate.map(p => p.variant_id);
-            const { error: deactivateError } = await supabase
-                .from('products')
-                .update({ is_active: false })
-                .in('variant_id', idsToDeactivate);
-
-            if (deactivateError) console.error('Erro ao desativar produtos antigos:', deactivateError.message);
-            else console.log(`${idsToDeactivate.length} produtos antigos foram desativados com sucesso.`);
-        } else {
-            console.log('Nenhum produto antigo para desativar.');
+    const deDuplicatedProductsMap = new Map();
+    for (const product of todosOsProdutosExtraidos) {
+        if (product.variant_id) {
+            deDuplicatedProductsMap.set(product.variant_id, product);
         }
     }
+    const finalProductList = Array.from(deDuplicatedProductsMap.values());
+    console.log(`Limpeza concluída. Lista final contém ${finalProductList.length} produtos únicos.`);
+    
+    if (finalProductList.length > 0) {
+        console.log('Iniciando sincronização com o banco de dados Supabase...');
+        const produtosParaSalvar = finalProductList.map(p => ({ ...p, user_id: userId }));
 
+        const { error: upsertError } = await supabase.from('products').upsert(produtosParaSalvar, { onConflict: 'variant_id' }); 
+        if (upsertError) throw new Error(`Erro ao salvar produtos no Supabase: ${upsertError.message}`);
+        console.log(`${produtosParaSalvar.length} produtos foram salvos ou atualizados no banco.`);
+
+        const receivedVariantIds = finalProductList.map(p => `'${p.variant_id}'`);
+        const { error: deactivateError } = await supabase.from('products').update({ is_active: false }).eq('user_id', userId).not('variant_id', 'in', `(${receivedVariantIds.join(',')})`);
+        if (deactivateError) console.error('Erro ao desativar produtos antigos:', deactivateError.message);
+        else console.log('Produtos antigos foram desativados com sucesso.');
+    }
+    
     console.log('Sincronização com o banco de dados concluída!');
-    return { message: 'Sincronização completa realizada com sucesso!', totalProdutos: todosOsProdutosExtraidos.length };
+    return { message: 'Sincronização completa realizada com sucesso!', totalProdutos: finalProductList.length };
 
   } catch (error) {
     console.error('Ocorreu um erro fatal durante a execução do robô:', error.message);
@@ -96,7 +64,64 @@ async function obaobaSync(email, password, userId) {
   }
 }
 
-// ... (COLE AQUI AS FUNÇÕES AUXILIARES COMPLETAS: performLogin, scrapeAllProducts, resolveCaptcha) ...
-// É crucial que as funções auxiliares que já te passei estejam aqui para o código funcionar.
+// --- Funções Auxiliares ---
+
+async function performLogin(page, email, password, captchaKey) {
+    await page.goto('https://app.obaobamix.com.br/login', { waitUntil: 'networkidle' });
+    const siteKey = await page.locator('.g-recaptcha').getAttribute('data-sitekey');
+    const captchaToken = await resolveCaptcha(siteKey, page.url(), captchaKey);
+    await page.evaluate(token => { document.getElementById('g-recaptcha-response').value = token; }, captchaToken);
+    await page.locator('#email').fill(email);
+    await page.locator('#password').fill(password);
+    await page.locator('button[type="submit"]').click();
+    await page.waitForURL('**/admin', { timeout: 60000 });
+    console.log('Login e redirecionamento para /admin bem-sucedidos.');
+}
+
+async function scrapeAllProducts(page) {
+    const seletorTabela = 'table.datatable-Product tbody tr';
+    await page.waitForSelector(seletorTabela, { timeout: 60000 });
+    let todosOsProdutos = [];
+    let paginaAtual = 1;
+    while (true) {
+        console.log(`Extraindo dados da página ${paginaAtual}...`);
+        const produtosDaPagina = await page.$$eval(seletorTabela, rows =>
+            rows.map(row => {
+                const columns = row.querySelectorAll('td');
+                if (columns.length < 7) return null;
+                const sku = columns[0]?.innerText.trim();
+                const title = columns[2]?.innerText.trim();
+                const stock = parseInt(columns[6]?.querySelector('span')?.getAttribute('data-original-title')) || 0;
+                const purchase_price = parseFloat(columns[5]?.innerText.trim().replace('R$', '').replace(',', '.')) || 0;
+                const variant_id = `${sku}-${title.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-')}`;
+                return { sku, title, stock, purchase_price, variant_id, is_active: true };
+            }).filter(p => p && p.sku)
+        );
+        todosOsProdutos.push(...produtosDaPagina);
+        const proximoBotao = page.locator('li.next:not(.disabled) a');
+        if (await proximoBotao.count() > 0) {
+            await proximoBotao.click();
+            await page.waitForTimeout(2500);
+            paginaAtual++;
+        } else {
+            break;
+        }
+    }
+    return todosOsProdutos;
+}
+
+async function resolveCaptcha(siteKey, pageUrl, apiKey) {
+    const res = await axios.post(`http://2captcha.com/in.php`, null, { params: { key: apiKey, method: 'userrecaptcha', googlekey: siteKey, pageurl: pageUrl, json: 1 } });
+    const requestId = res.data.request;
+    if (res.data.status !== 1) throw new Error(`Erro ao enviar CAPTCHA: ${res.data.request}`);
+    while (true) {
+        await new Promise(resolve => setTimeout(resolve, 5000));
+        const check = await axios.get(`http://2captcha.com/res.php`, { params: { key: apiKey, action: 'get', id: requestId, json: 1 } });
+        if (check.data.status === 1) {
+            console.log('CAPTCHA resolvido com sucesso!');
+            return check.data.request;
+        }
+    }
+}
 
 module.exports = obaobaSync;
