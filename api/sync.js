@@ -3,17 +3,20 @@ const chromium = require('@sparticuz/chromium');
 const axios = require('axios');
 const { createClient } = require('@supabase/supabase-js');
 
+// --- Função Principal ---
 async function obaobaSync(email, password, userId) {
   let browser = null;
   const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
   try {
     const { CAPTCHA_API_KEY } = process.env;
+
     console.log('Iniciando navegador...');
     browser = await playwright.chromium.launch({
       args: chromium.args,
       executablePath: await chromium.executablePath(),
       headless: true,
     });
+    
     const context = await browser.newContext({ userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36' });
     const page = await context.newPage();
     
@@ -73,9 +76,26 @@ async function performLogin(page, email, password, captchaKey) {
     await page.evaluate(token => { document.getElementById('g-recaptcha-response').value = token; }, captchaToken);
     await page.locator('#email').fill(email);
     await page.locator('#password').fill(password);
+    console.log('Credenciais preenchidas. Clicando no botão de login...');
     await page.locator('button[type="submit"]').click();
-    await page.waitForURL('**/admin', { timeout: 60000 });
-    console.log('Login e redirecionamento para /admin bem-sucedidos.');
+    
+    try {
+        console.log("Aguardando redirecionamento para a página '/admin'...");
+        await page.waitForURL('**/admin', { timeout: 30000 });
+        console.log('Redirecionamento para /admin bem-sucedido.');
+    } catch (e) {
+        if (e.name === 'TimeoutError') {
+            console.error("TIMEOUT! A página não redirecionou para '/admin' a tempo.");
+            const currentUrl = page.url();
+            console.error(`URL atual no momento do timeout: ${currentUrl}`);
+            console.error("Capturando o HTML da página atual para depuração...");
+            const pageContent = await page.content();
+            console.error("================== CONTEÚDO HTML DA PÁGINA DE FALHA ==================");
+            console.error(pageContent);
+            console.error("========================================================================");
+        }
+        throw e;
+    }
 }
 
 async function scrapeAllProducts(page) {
@@ -116,6 +136,7 @@ async function resolveCaptcha(siteKey, pageUrl, apiKey) {
     if (res.data.status !== 1) throw new Error(`Erro ao enviar CAPTCHA: ${res.data.request}`);
     while (true) {
         await new Promise(resolve => setTimeout(resolve, 5000));
+        console.log('Aguardando resolução do CAPTCHA...');
         const check = await axios.get(`http://2captcha.com/res.php`, { params: { key: apiKey, action: 'get', id: requestId, json: 1 } });
         if (check.data.status === 1) {
             console.log('CAPTCHA resolvido com sucesso!');
