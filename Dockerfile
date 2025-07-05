@@ -4,7 +4,7 @@ FROM mcr.microsoft.com/playwright:v1.44.0-jammy
 # Definir o diretório de trabalho dentro do container
 WORKDIR /app
 
-# Copiar apenas os arquivos de dependência primeiro para otimizar o cache do Docker
+# Copiar os arquivos de dependência primeiro para otimizar o cache do Docker
 COPY package*.json ./
 
 # Usar o comando de instalação padrão, que é mais robusto
