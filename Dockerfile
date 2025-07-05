@@ -1,11 +1,10 @@
-FROM node:18-slim
+FROM mcr.microsoft.com/playwright/javascript:v1.40.0-jammy
 
 WORKDIR /usr/src/app
 
 COPY package*.json ./
 
-# Esta é a linha correta e completa que instala TUDO o que é necessário
-RUN npm install && npx playwright install-deps
+RUN npm install --omit=dev
 
 COPY . .
 
