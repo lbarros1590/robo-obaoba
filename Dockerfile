@@ -28,4 +28,4 @@ ENV NODE_ENV=production
 EXPOSE 3000
 
 # Comando de inicialização da aplicação
-CMD ["node", "api/index.js"]
+CMD ["node", "api/sync.js"]
