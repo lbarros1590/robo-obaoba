@@ -43,38 +43,36 @@ async function obaobaSync(email, password, userId) {
   }
 }
 
+// --- FUNÇÃO ATUALIZADA COM O "DETETIVE" ---
 async function performLogin(page, email, password, captchaKey) {
-    console.log('Acessando página de login...');
     await page.goto('https://app.obaobamix.com.br/login', { waitUntil: 'networkidle' });
-
-    console.log('Resolvendo CAPTCHA...');
     const siteKey = await page.locator('.g-recaptcha').getAttribute('data-sitekey');
     const captchaToken = await resolveCaptcha(siteKey, page.url(), captchaKey);
-
-    await page.evaluate((token) => {
-        const el = document.getElementById('g-recaptcha-response');
-        if (el) {
-            el.value = token;
-            el.dispatchEvent(new Event('change'));
-        }
-    }, captchaToken);
-
-    console.log('Preenchendo email e senha...');
+    await page.evaluate(token => { document.getElementById('g-recaptcha-response').value = token; }, captchaToken);
     await page.locator('#email').fill(email);
     await page.locator('#password').fill(password);
-
-    console.log('Enviando formulário...');
-    await Promise.all([
-        page.waitForNavigation({ waitUntil: 'networkidle', timeout: 60000 }),
-        page.locator('button[type="submit"]').click()
-    ]);
-
-    // ✅ Em vez de esperar URL, esperamos por seletor exclusivo da página de produtos
-    await page.waitForSelector('.datatable-Product', { timeout: 60000 });
-
-    console.log('Login e acesso à área de administração confirmados!');
+    console.log('Credenciais preenchidas. Clicando no botão de login...');
+    await page.locator('button[type="submit"]').click();
+    
+    try {
+        console.log("Aguardando redirecionamento para a página '/admin'...");
+        await page.waitForURL('**/admin', { timeout: 30000 }); // Tempo de espera um pouco menor para teste
+        console.log('Redirecionamento para /admin bem-sucedido.');
+    } catch (e) {
+        if (e.name === 'TimeoutError') {
+            console.error("TIMEOUT! A página não redirecionou para '/admin' a tempo.");
+            const currentUrl = page.url();
+            console.error(`URL atual no momento do timeout: ${currentUrl}`);
+            console.error("Capturando o HTML da página atual para depuração...");
+            const pageContent = await page.content();
+            console.error("================== CONTEÚDO HTML DA PÁGINA DE FALHA ==================");
+            console.error(pageContent);
+            console.error("========================================================================");
+        }
+        // Lança o erro original para parar o processo
+        throw e;
+    }
 }
-
 
 // ... As funções scrapeAllProducts e resolveCaptcha continuam as mesmas de antes ...
 // (É importante garantir que elas estejam no arquivo)
