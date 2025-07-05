@@ -1,31 +1,20 @@
-# Imagem base com suporte ao Chromium headless
-FROM node:20-alpine
+# Usar a imagem base oficial do Playwright, que já inclui tudo.
+FROM mcr.microsoft.com/playwright:v1.44.0-jammy
 
-# Instala dependências necessárias para o Chromium funcionar no ambiente cloud
-RUN apk add --no-cache \
-    nss \
-    freetype \
-    harfbuzz \
-    ca-certificates \
-    ttf-freefont \
-    chromium
-
-# Define diretório de trabalho
+# Definir o diretório de trabalho
 WORKDIR /app
 
-# Copia os arquivos de dependências e instala os pacotes
+# Copiar os arquivos de dependência
 COPY package*.json ./
-RUN npm install
 
-# Copia o restante da aplicação
+# Instalar as dependências de produção
+RUN npm install --omit=dev
+
+# Copiar o resto do seu código
 COPY . .
 
-# Define variáveis de ambiente padrão do Chromium headless
-ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
-ENV NODE_ENV=production
+# Expor a porta que o nosso server.js usa
+EXPOSE 10000
 
-# Porta padrão (caso necessário)
-EXPOSE 3000
-
-# Comando de inicialização da aplicação
-CMD ["node", "api/sync.js"]
+# O comando para iniciar o SERVIDOR WEB
+CMD [ "npm", "start" ]
