@@ -9,18 +9,16 @@ async function obaobaSync(email, password, userId) {
   try {
     const { CAPTCHA_API_KEY } = process.env;
 
-    console.log('Iniciando navegador...');
+    console.log('Iniciando navegador headless...');
     browser = await playwright.chromium.launch({
       args: chromium.args,
       executablePath: await chromium.executablePath(),
       headless: true,
     });
     
-    // --- AQUI ESTÁ A CORREÇÃO ---
-    // Nós agora esperamos (await) a criação do contexto E da página separadamente.
+    // ESTA É A CORREÇÃO DO BUG. Duas linhas com 'await'.
     const context = await browser.newContext({ userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36' });
     const page = await context.newPage();
-    // --- FIM DA CORREÇÃO ---
     
     console.log('Realizando login...');
     await performLogin(page, email, password, CAPTCHA_API_KEY);
@@ -61,7 +59,6 @@ async function obaobaSync(email, password, userId) {
 }
 
 // --- Funções Auxiliares ---
-
 async function performLogin(page, email, password, captchaKey) {
     await page.goto('https://app.obaobamix.com.br/login', { waitUntil: 'networkidle' });
     const siteKey = await page.locator('.g-recaptcha').getAttribute('data-sitekey');
