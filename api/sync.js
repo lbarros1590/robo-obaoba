@@ -17,48 +17,52 @@ async function obaobaSync(email, password, userId) {
     const page = await context.newPage();
 
     await performLogin(page, email, password, CAPTCHA_API_KEY);
-    await page.goto('https://app.obaobamix.com.br/admin/products', { waitUntil: 'networkidle' });
+    await page.goto('https://app.obaobamix.com.br/admin/products');
 
     const todosOsProdutosExtraidos = await scrapeAllProducts(page);
-    console.log(`Extração bruta concluída. Total de ${todosOsProdutosExtraidos.length} produtos encontrados.`);
+    console.log(`Extração concluída. Total de ${todosOsProdutosExtraidos.length} produtos encontrados.`);
 
-    const deDuplicatedProductsMap = new Map();
-    for (const product of todosOsProdutosExtraidos) {
-        if (product.variant_id) {
-            deDuplicatedProductsMap.set(product.variant_id, product);
-        }
-    }
-    const finalProductList = Array.from(deDuplicatedProductsMap.values());
-    console.log(`Limpeza concluída. Lista final contém ${finalProductList.length} produtos únicos.`);
-
-    if (finalProductList.length > 0) {
+    if (todosOsProdutosExtraidos.length > 0) {
         console.log('Iniciando sincronização com o banco de dados Supabase...');
+
+        // Limpa a lista para garantir que cada variant_id é único
+        const deDuplicatedProductsMap = new Map();
+        for (const product of todosOsProdutosExtraidos) {
+            if (product.variant_id) {
+                deDuplicatedProductsMap.set(product.variant_id, product);
+            }
+        }
+        const finalProductList = Array.from(deDuplicatedProductsMap.values());
+
         const produtosParaSalvar = finalProductList.map(p => ({ ...p, user_id: userId }));
 
-        const { error: upsertError } = await supabase.from('products').upsert(produtosParaSalvar, { onConflict: 'variant_id' }); 
-        if (upsertError) throw new Error(`Erro ao salvar produtos no Supabase: ${upsertError.message}`);
+        // Usa a 'variant_id' como a chave para resolver conflitos
+        const { error: upsertError } = await supabase
+            .from('products')
+            .upsert(produtosParaSalvar, { onConflict: 'variant_id' }); 
+
+        if (upsertError) {
+            throw new Error(`Erro ao salvar produtos no Supabase: ${upsertError.message}`);
+        }
         console.log(`${produtosParaSalvar.length} produtos foram salvos ou atualizados no banco.`);
 
         const receivedVariantIds = finalProductList.map(p => `'${p.variant_id}'`);
-        const { error: deactivateError } = await supabase.from('products').update({ is_active: false }).eq('user_id', userId).not('variant_id', 'in', `(${receivedVariantIds.join(',')})`);
-        if (deactivateError) console.error('Erro ao desativar produtos antigos:', deactivateError.message);
-        else console.log('Produtos antigos foram desativados com sucesso.');
+        await supabase
+            .from('products')
+            .update({ is_active: false })
+            .eq('user_id', userId)
+            .not('variant_id', 'in', `(${receivedVariantIds.join(',')})`);
     }
 
-    console.log('Sincronização com o banco de dados concluída!');
-    return { message: 'Sincronização completa realizada com sucesso!', totalProdutos: finalProductList.length };
+    return { message: 'Sincronização completa!', totalProdutos: todosOsProdutosExtraidos.length };
 
   } catch (error) {
-    console.error('Ocorreu um erro fatal durante a execução do robô:', error.message);
+    console.error('Ocorreu um erro fatal no robô:', error.message);
     throw error;
   } finally {
-    if (browser) {
-      await browser.close();
-      console.log('Navegador fechado.');
-    }
+    if (browser) await browser.close();
   }
 }
-
 async function performLogin(page, email, password, captchaKey) {
     await page.goto('https://app.obaobamix.com.br/login', { waitUntil: 'networkidle' });
     const siteKey = await page.locator('.g-recaptcha').getAttribute('data-sitekey');
