@@ -39,8 +39,10 @@ async function obaobaSync(email, password, userId) {
         // Usa a 'variant_id' como a chave para resolver conflitos
         const { error: upsertError } = await supabase
             .from('products')
-            .upsert(produtosParaSalvar, { onConflict: 'variant_id' }); 
+          //  .upsert(produtosParaSalvar, { onConflict: 'variant_id' }); 
+.upsert(produtosParaSalvar, { onConflict: ['variant_id', 'user_id', 'sku'] })
 
+      
         if (upsertError) {
             throw new Error(`Erro ao salvar produtos no Supabase: ${upsertError.message}`);
         }
