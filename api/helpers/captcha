@@ -1,4 +1,5 @@
 // api/helpers/captcha.js
+
 const axios = require('axios');
 
 async function resolveCaptcha(siteKey, pageUrl, apiKey) {
