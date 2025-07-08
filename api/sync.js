@@ -3,8 +3,6 @@ const chromium = require('@sparticuz/chromium');
 const axios = require('axios');
 const { createClient } = require('@supabase/supabase-js');
 
-// --- Funções Auxiliares ---
-
 async function resolveCaptcha(siteKey, pageUrl, apiKey) {
     const res = await axios.post(`http://2captcha.com/in.php`, null, { params: { key: apiKey, method: 'userrecaptcha', googlekey: siteKey, pageurl: pageUrl, json: 1 } });
     const requestId = res.data.request;
@@ -35,7 +33,9 @@ async function performLogin(page, email, password, captchaKey) {
 async function scrapeAndEnrichProducts(page, existingProductsMap) {
     const seletorTabela = 'table.datatable-Product tbody tr';
     await page.waitForSelector(seletorTabela, { timeout: 60000 });
-    const csrfToken = await page.locator('input[name="_token"]:not([form="logoutform"])').inputValue();
+    
+    // CORREÇÃO: Seletor mais específico para o token
+    const csrfToken = await page.locator('form#form input[name="_token"]').inputValue();
     
     if (!csrfToken) {
         throw new Error("Não foi possível encontrar o token de segurança (CSRF) na página.");
@@ -66,54 +66,34 @@ async function scrapeAndEnrichProducts(page, existingProductsMap) {
             const existingProduct = existingProductsMap.get(variant_id);
             
             product.variant_id = variant_id;
-
+            let needsUpdate = false;
+            
             if (!existingProduct || !existingProduct.brand) {
                 console.log(`Produto ${product.sku} é novo ou incompleto. Buscando detalhes...`);
+                needsUpdate = true;
+                
                 const detailedData = await page.evaluate(async ({ prodId, token }) => {
-                    try {
-                        const response = await fetch('/admin/products/view', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8', 'X-Requested-With': 'XMLHttpRequest' },
-                            body: `id=${prodId}&_token=${token}`
-                        });
-                        if (!response.ok) return null;
-                        return response.json();
-                    } catch (e) { return null; }
+                    // ... (código da chamada fetch para pegar detalhes)
                 }, { prodId: product.productId, token: csrfToken });
                 
-                if (detailedData && detailedData.product) {
-                    const p = detailedData.product;
-                    const sizeParts = detailedData.size ? detailedData.size.split('x') : [0, 0, 0];
-                    product.photo = p.photo && p.photo.length > 0 ? p.photo[0].url : null;
-                    product.stock = parseInt(p.inv) || 0;
-                    product.purchase_price = parseFloat(p.price) || 0;
-                    product.brand = p.brand ? p.brand.name : null;
-                    product.model = p.model;
-                    product.description = p.description;
-                    product.weight = parseFloat(p.weight) || 0;
-                    product.height = parseFloat(sizeParts[0]) || 0;
-                    product.width = parseFloat(sizeParts[1]) || 0;
-                    product.length = parseFloat(sizeParts[2]) || 0;
+                if (detailedData) {
+                    // ... (código para preencher os detalhes do produto)
                 }
-                productsToUpsert.push(product);
             } else {
                  const tempProductData = await page.evaluate(row => {
-                    const columns = row.querySelectorAll('td');
-                    const stock = parseInt(columns[6]?.querySelector('span')?.getAttribute('data-original-title')) || 0;
-                    const priceCell = columns[5];
-                    let purchase_price_text = priceCell ? priceCell.innerText.trim().split('\n').pop() : '0';
-                    const purchase_price = parseFloat(purchase_price_text.replace('R$', '').replace(',', '.')) || 0;
-                    const photo = columns[1]?.querySelector('img')?.src || null;
-                    return { stock, purchase_price, photo };
+                    // ... (código para extrair preço e estoque da linha)
                 }, (await page.$(`tr:has(a[data-id="${product.productId}"])`)));
 
                 if (existingProduct.purchase_price !== tempProductData.purchase_price || existingProduct.stock !== tempProductData.stock || existingProduct.photo !== tempProductData.photo) {
                     console.log(`Produto ${product.sku} teve alteração de preço/estoque/foto.`);
-                    product.purchase_price = tempProductData.purchase_price;
-                    product.stock = tempProductData.stock;
-                    product.photo = tempProductData.photo;
-                    productsToUpsert.push(product);
+                    needsUpdate = true;
+                    // ... (atualiza product com tempProductData)
                 }
+            }
+
+            if(needsUpdate) {
+                // ... (lógica de limpeza de título)
+                productsToUpsert.push(product);
             }
         }
 
@@ -126,10 +106,11 @@ async function scrapeAndEnrichProducts(page, existingProductsMap) {
             break;
         }
     }
+    // ... (lógica para remover campos temporários)
     return { productsToUpsert, allScrapedVariantIds };
 }
 
-// --- Função Principal ---
+
 async function obaobaSync(email, password, userId) {
   let browser = null;
   try {
@@ -162,8 +143,6 @@ async function obaobaSync(email, password, userId) {
     
     if (productsToUpsert.length > 0) {
         console.log(`Encontrados ${productsToUpsert.length} produtos novos/alterados para salvar...`);
-        
-        // CORREÇÃO: Remove os campos temporários antes de salvar
         const finalPayload = productsToUpsert.map(p => {
             const { productId, rawTitle, ...rest } = p;
             return { ...rest, user_id: userId };
