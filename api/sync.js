@@ -20,26 +20,26 @@ async function obaobaSync(email, password, userId) {
     
     await performLogin(page, email, password, CAPTCHA_API_KEY);
     
-    console.log('Buscando produtos existentes no banco de dados para comparação...');
+    console.log('Buscando produtos existentes no banco de dados...');
     const { data: existingProductsData, error: fetchError } = await supabase
         .from('products')
         .select('variant_id, purchase_price, stock, is_active, photo, description, brand')
         .eq('user_id', userId);
     if (fetchError) throw new Error(`Erro ao buscar produtos existentes: ${fetchError.message}`);
     const existingProductsMap = new Map(existingProductsData.map(p => [p.variant_id, p]));
-    console.log(`${existingProductsMap.size} produtos existentes encontrados no banco.`);
+    console.log(`${existingProductsMap.size} produtos existentes encontrados.`);
 
     await page.goto('https://app.obaobamix.com.br/admin/products', { waitUntil: 'networkidle' });
     
     const { productsToUpsert, allScrapedVariantIds } = await scrapeAndEnrichProducts(page, existingProductsMap);
     
     if (productsToUpsert.length > 0) {
-        console.log(`Encontrados ${productsToUpsert.length} alterações/novos produtos para salvar...`);
+        console.log(`Encontrados ${productsToUpsert.length} produtos novos/alterados para salvar...`);
         const { error: upsertError } = await supabase.from('products').upsert(productsToUpsert.map(p => ({...p, user_id: userId})), { onConflict: 'variant_id' });
         if (upsertError) throw new Error(`Erro ao salvar produtos no Supabase: ${upsertError.message}`);
         console.log(`${productsToUpsert.length} produtos foram salvos ou atualizados.`);
     } else {
-        console.log('Nenhuma alteração de preço, estoque ou detalhes encontrada nos produtos.');
+        console.log('Nenhuma alteração encontrada nos produtos.');
     }
     
     const productsToDeactivate = existingProductsData.filter(p => p.is_active && !allScrapedVariantIds.has(p.variant_id));
@@ -54,7 +54,7 @@ async function obaobaSync(email, password, userId) {
 
     console.log('Processo finalizado com sucesso!');
   } catch (error) {
-    console.error('Ocorreu um erro fatal durante a execução do robô:', error.message);
+    console.error('Ocorreu um erro fatal na execução do robô:', error.message);
     throw error;
   } finally {
     if (browser) {
@@ -67,7 +67,7 @@ async function obaobaSync(email, password, userId) {
 async function scrapeAndEnrichProducts(page, existingProductsMap) {
     const seletorTabela = 'table.datatable-Product tbody tr';
     await page.waitForSelector(seletorTabela, { timeout: 60000 });
-    const csrfToken = await page.locator('input[name="_token"]').inputValue();
+    const csrfToken = await page.locator('form#form input[name="_token"]').inputValue();
     
     let productsToUpsert = [];
     let allScrapedVariantIds = new Set();
@@ -79,6 +79,7 @@ async function scrapeAndEnrichProducts(page, existingProductsMap) {
             rows.map(row => {
                 const columns = row.querySelectorAll('td');
                 if (columns.length < 7) return null;
+                
                 const viewButton = row.querySelector('#btnViewProduct');
                 const productId = viewButton ? viewButton.getAttribute('data-id') : null;
                 const sku = columns[0]?.innerText.trim();
@@ -100,16 +101,19 @@ async function scrapeAndEnrichProducts(page, existingProductsMap) {
             const existingProduct = existingProductsMap.get(product.variant_id);
             let needsUpdate = false;
             
-            // Verifica se o produto é novo ou se está incompleto (sem marca, que vem dos detalhes)
+            // Se o produto é novo ou não tem marca (sinal de que detalhes não foram coletados)
             if (!existingProduct || !existingProduct.brand) {
                 console.log(`Produto ${product.sku} é novo ou incompleto. Buscando detalhes...`);
                 needsUpdate = true;
-
+                
                 const detailedData = await page.evaluate(async ({ prodId, token }) => {
                     try {
                         const response = await fetch('/admin/products/view', {
                             method: 'POST',
-                            headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8', 'X-Requested-With': 'XMLHttpRequest' },
+                            headers: {
+                                'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+                                'X-Requested-With': 'XMLHttpRequest'
+                            },
                             body: `id=${prodId}&_token=${token}`
                         });
                         if (!response.ok) return null;
@@ -117,9 +121,10 @@ async function scrapeAndEnrichProducts(page, existingProductsMap) {
                     } catch (e) { return null; }
                 }, { prodId: product.productId, token: csrfToken });
                 
-                if (detailedData) {
+                if (detailedData && detailedData.product) {
                     const p = detailedData.product;
                     const sizeParts = detailedData.size ? detailedData.size.split('x') : [0, 0, 0];
+                    
                     product.photo = p.photo && p.photo.length > 0 ? p.photo[0].url : null;
                     product.brand = p.brand ? p.brand.name : null;
                     product.model = p.model;
@@ -130,7 +135,6 @@ async function scrapeAndEnrichProducts(page, existingProductsMap) {
                     product.length = parseFloat(sizeParts[2]) || 0;
                 }
             } else {
-                // O produto já existe e está completo, só verifica preço e estoque
                 if (existingProduct.purchase_price !== product.purchase_price || existingProduct.stock !== product.stock) {
                     console.log(`Produto ${product.sku} teve alteração de preço/estoque.`);
                     needsUpdate = true;
@@ -138,13 +142,15 @@ async function scrapeAndEnrichProducts(page, existingProductsMap) {
             }
 
             if(needsUpdate) {
-                // Limpa o título antes de adicionar à lista
                 let cleanTitle = product.rawTitle.replace(/\s*\[(QE|ER|ME|KIT)\]\s*/gi, ' ').trim();
-                cleanTitle = cleanTitle.replace(/\[.*?\]/g, '').trim();
+                const variationMatch = cleanTitle.match(/(\[.*?\]|\(.*?\))/);
+                product.variation_details = variationMatch ? variationMatch[0].replace(/\[|\]|\(|\)/g, '').trim() : null;
+                product.base_name = product.variation_details ? cleanTitle.replace(variationMatch[0], '').replace(/\s+/g, ' ').trim() : cleanTitle;
+                
                 const cores = ['Preto', 'Branco', 'Azul', 'Vermelho', 'Verde', 'Amarelo', 'Rosa', 'Cinza', 'Marrom', 'Laranja', 'Roxo', 'Sortido'];
                 const regexCores = new RegExp(`^(${cores.join('|')})\\s+`, 'i');
-                cleanTitle = cleanTitle.replace(regexCores, '').trim();
-                product.title = cleanTitle.replace(/\s+/g, ' ').trim();
+                product.base_name = product.base_name.replace(regexCores, '').trim();
+                product.title = product.base_name;
                 
                 productsToUpsert.push(product);
             }
