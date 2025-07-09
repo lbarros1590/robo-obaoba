@@ -16,6 +16,7 @@ async function performLogin(page, email, password, captchaKey) {
     console.log('Login e redirecionamento para /admin bem-sucedidos.');
 }
 
+// Substitua esta função em api/helpers/scraper.js
 async function scrapeAllProducts(page) {
     console.log('Navegando para a página de "Todos os Produtos"...');
     await page.goto('https://app.obaobamix.com.br/admin/products', { waitUntil: 'networkidle' });
@@ -25,45 +26,64 @@ async function scrapeAllProducts(page) {
     await page.waitForSelector(seletorTabela, { timeout: 60000 });
     console.log('Tabela de produtos encontrada.');
 
+    // Pega o token de segurança da página
+    const csrfToken = await page.locator('form#form input[name="_token"]').inputValue();
+    if (!csrfToken) {
+        throw new Error("Não foi possível encontrar o token de segurança (CSRF) na página.");
+    }
+    console.log('Token de segurança (CSRF) capturado com sucesso.');
+
     let todosOsProdutos = [];
     let paginaAtual = 1;
     while (true) {
-        console.log(`Extraindo dados da página ${paginaAtual}...`);
+        console.log(`--- INICIANDO EXTRAÇÃO DA PÁGINA ${paginaAtual} ---`);
+        
+        // Pega os dados básicos da tabela
         const produtosDaPagina = await page.$$eval(seletorTabela, rows =>
             rows.map(row => {
-                const columns = row.querySelectorAll('td');
-                if (columns.length < 7) return null;
-                
-                const sku = columns[0]?.innerText.trim();
-                const photoElement = columns[1]?.querySelector('img');
-                const photo = photoElement ? photoElement.src : null;
-                let rawTitle = columns[2]?.innerText.trim() || '';
-                const originalTitleForVariant = rawTitle;
-                
-                let cleanTitle = rawTitle.replace(/\s*\[(QE|ER|ME|KIT)\]\s*/gi, ' ').trim();
-                cleanTitle = cleanTitle.replace(/\[.*?\]/g, '').trim();
-                const cores = ['Preto', 'Branco', 'Azul', 'Vermelho', 'Verde', 'Amarelo', 'Rosa', 'Cinza', 'Marrom', 'Laranja', 'Roxo', 'Sortido'];
-                const regexCores = new RegExp(`^(${cores.join('|')})\\s+`, 'i');
-                cleanTitle = cleanTitle.replace(regexCores, '').trim();
-                cleanTitle = cleanTitle.replace(/\s+/g, ' ').trim();
-                const finalTitle = cleanTitle || rawTitle.replace(/\s*\[(QE|ER|ME|KIT)\]\s*/gi, ' ').trim();
-                
-                const priceCell = columns[5];
-                let purchase_price_text;
-                if (priceCell) {
-                    const priceParts = priceCell.innerText.trim().split('\n');
-                    purchase_price_text = priceParts[priceParts.length - 1];
-                } else {
-                    purchase_price_text = '0';
-                }
-                const purchase_price = parseFloat(purchase_price_text.replace('R$', '').replace(',', '.')) || 0;
-                
-                const stock = parseInt(columns[6]?.querySelector('span')?.getAttribute('data-original-title')) || 0;
-                const variant_id = `${sku}-${originalTitleForVariant.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-')}`;
-                
-                return { sku, photo, title: finalTitle, stock, purchase_price, variant_id, is_active: true };
-            }).filter(p => p && p.sku)
+                const viewButton = row.querySelector('#btnViewProduct');
+                return {
+                    productId: viewButton ? viewButton.getAttribute('data-id') : null,
+                    sku: row.querySelector('td:first-child')?.innerText.trim()
+                };
+            }).filter(p => p && p.productId)
         );
+        console.log(`${produtosDaPagina.length} produtos básicos encontrados nesta página.`);
+
+        // Para cada produto, busca os detalhes
+        for (let product of produtosDaPagina) {
+            console.log(`--> Buscando detalhes para o produto ID: ${product.productId}`);
+            
+            const detailedData = await page.evaluate(async ({ prodId, token }) => {
+                try {
+                    const response = await fetch('/admin/products/view', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+                            'X-Requested-With': 'XMLHttpRequest'
+                        },
+                        body: `id=${prodId}&_token=${token}`
+                    });
+                    if (!response.ok) {
+                        console.error(`Falha na API de detalhes para ID ${prodId}: Status ${response.status}`);
+                        return null;
+                    }
+                    return response.json();
+                } catch (e) {
+                    console.error(`Erro no fetch da API de detalhes para ID ${prodId}:`, e.message);
+                    return null;
+                }
+            }, { prodId: product.productId, token: csrfToken });
+
+            if (detailedData && detailedData.product) {
+                console.log(`---> Detalhes encontrados para o produto ID: ${product.productId}`);
+                // Junta os dados detalhados aqui (a lógica completa)
+                // ...
+            } else {
+                console.warn(`---> AVISO: Nenhum dado detalhado retornado para o produto ID: ${product.productId}`);
+            }
+        }
+
         todosOsProdutos.push(...produtosDaPagina);
         const proximoBotao = page.locator('li.next:not(.disabled) a');
         if (await proximoBotao.count() > 0) {
@@ -71,10 +91,10 @@ async function scrapeAllProducts(page) {
             await page.waitForTimeout(3000);
             paginaAtual++;
         } else {
+            console.log('Não há mais páginas. Finalizando extração.');
             break;
         }
     }
     return todosOsProdutos;
 }
-
 module.exports = { performLogin, scrapeAllProducts };
