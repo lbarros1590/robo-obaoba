@@ -11,13 +11,9 @@ async function performLogin(page, email, password, captchaKey) {
     await page.locator('#email').fill(email);
     await page.locator('#password').fill(password);
     await page.locator('button[type="submit"]').click();
-    
-    await page.waitForURL('**/admin', { timeout: 60000 }); 
+    await page.waitForURL('**/admin', { timeout: 60000 });
     console.log('Login e redirecionamento para /admin bem-sucedidos.');
 }
-
-// Substitua esta função em api/helpers/scraper.js
-// Substitua esta função em api/helpers/scraper.js
 
 async function scrapeAllProducts(page) {
     console.log('Navegando para a página de "Todos os Produtos"...');
@@ -32,7 +28,6 @@ async function scrapeAllProducts(page) {
     if (!csrfToken) {
         throw new Error("Não foi possível encontrar o token de segurança (CSRF) na página.");
     }
-    console.log('Token de segurança (CSRF) capturado com sucesso.');
 
     let todosOsProdutos = [];
     let paginaAtual = 1;
@@ -41,19 +36,25 @@ async function scrapeAllProducts(page) {
         
         let produtosDaPagina = await page.$$eval(seletorTabela, rows =>
             rows.map(row => {
+                const columns = row.querySelectorAll('td');
+                if (columns.length < 7) return null;
+                
                 const viewButton = row.querySelector('#btnViewProduct');
-                return {
-                    productId: viewButton ? viewButton.getAttribute('data-id') : null,
-                    sku: row.querySelector('td:first-child')?.innerText.trim(),
-                    rawTitle: row.querySelector('td:nth-child(3)')?.innerText.trim() || ''
-                };
+                const productId = viewButton ? viewButton.getAttribute('data-id') : null;
+                const sku = columns[0]?.innerText.trim();
+                const rawTitle = columns[2]?.innerText.trim() || '';
+                
+                const stock = parseInt(columns[6]?.querySelector('span')?.getAttribute('data-original-title')) || 0;
+                const priceCell = columns[5];
+                let purchase_price_text = priceCell ? priceCell.innerText.trim().split('\n').pop() : '0';
+                const purchase_price = parseFloat(purchase_price_text.replace('R$', '').replace(',', '.')) || 0;
+
+                return { productId, sku, rawTitle, stock, purchase_price };
             }).filter(p => p && p.productId)
         );
-        console.log(`${produtosDaPagina.length} produtos básicos encontrados nesta página.`);
 
         for (let i = 0; i < produtosDaPagina.length; i++) {
             let product = produtosDaPagina[i];
-            console.log(`--> Buscando detalhes para o produto ID: ${product.productId}`);
             
             const detailedData = await page.evaluate(async ({ prodId, token }) => {
                 try {
@@ -68,48 +69,37 @@ async function scrapeAllProducts(page) {
             }, { prodId: product.productId, token: csrfToken });
 
             if (detailedData && detailedData.product) {
-                console.log(`---> Detalhes encontrados para o produto ID: ${product.productId}`);
                 const p = detailedData.product;
                 const sizeParts = detailedData.size ? detailedData.size.split('x') : [0, 0, 0];
                 
-                // Limpa o título
                 let cleanTitle = product.rawTitle.replace(/\s*\[(QE|ER|ME|KIT)\]\s*/gi, ' ').trim();
                 const variationMatch = cleanTitle.match(/(\[.*?\]|\(.*?\))/);
-                const variationDetails = variationMatch ? variationMatch[0].replace(/\[|\]|\(|\)/g, '').trim() : null;
-                let baseName = variationDetails ? cleanTitle.replace(variationMatch[0], '').replace(/\s+/g, ' ').trim() : cleanTitle;
+                
+                product.photo = p.photo && p.photo.length > 0 ? p.photo[0].url : null;
+                product.brand = p.brand ? p.brand.name : null;
+                product.model = p.model;
+                product.description = p.description;
+                product.weight = parseFloat(p.weight) || 0;
+                product.height = parseFloat(sizeParts[0]) || 0;
+                product.width = parseFloat(sizeParts[1]) || 0;
+                product.length = parseFloat(sizeParts[2]) || 0;
+                product.variation_details = variationMatch ? variationMatch[0].replace(/\[|\]|\(|\)/g, '').trim() : null;
+                product.base_name = product.variation_details ? cleanTitle.replace(variationMatch[0], '').replace(/\s+/g, ' ').trim() : cleanTitle;
                 const cores = ['Preto', 'Branco', 'Azul', 'Vermelho', 'Verde', 'Amarelo', 'Rosa', 'Cinza', 'Marrom', 'Laranja', 'Roxo', 'Sortido'];
                 const regexCores = new RegExp(`^(${cores.join('|')})\\s+`, 'i');
-                baseName = baseName.replace(regexCores, '').trim();
+                product.base_name = product.base_name.replace(regexCores, '').trim();
+                product.title = product.base_name || product.rawTitle.replace(/\s*\[(QE|ER|ME|KIT)\]\s*/gi, ' ').trim();
+                product.variant_id = `${product.sku}-${product.rawTitle.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-')}`;
+                product.is_active = true;
 
-                // Monta o objeto final do produto com todos os dados
-                const finalProduct = {
-                    sku: product.sku,
-                    photo: p.photo && p.photo.length > 0 ? p.photo[0].url : null,
-                    title: baseName || product.rawTitle.replace(/\s*\[(QE|ER|ME|KIT)\]\s*/gi, ' ').trim(),
-                    stock: parseInt(p.inv) || 0,
-                    purchase_price: parseFloat(p.price) || 0,
-                    variant_id: `${product.sku}-${product.rawTitle.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-')}`,
-                    is_active: true,
-                    base_name: baseName,
-                    variation_details: variationDetails,
-                    parent_sku: null,
-                    brand: p.brand ? p.brand.name : null,
-                    model: p.model,
-                    description: p.description,
-                    weight: parseFloat(p.weight) || 0,
-                    height: parseFloat(sizeParts[0]) || 0,
-                    width: parseFloat(sizeParts[1]) || 0,
-                    length: parseFloat(sizeParts[2]) || 0
-                };
-                
-                produtosDaPagina[i] = finalProduct;
+                // Remove os campos temporários do objeto final
+                delete product.productId;
+                delete product.rawTitle;
             } else {
-                console.warn(`---> AVISO: Nenhum dado detalhado retornado para o produto ID: ${product.productId}`);
-                produtosDaPagina[i] = null; // Marca para remoção se os detalhes falharem
+                 produtosDaPagina[i] = null; // Marca para remoção se os detalhes falharem
             }
         }
         
-        // Adiciona apenas os produtos que foram enriquecidos com sucesso
         todosOsProdutos.push(...produtosDaPagina.filter(p => p !== null));
         
         const proximoBotao = page.locator('li.next:not(.disabled) a');
@@ -122,7 +112,9 @@ async function scrapeAllProducts(page) {
             break;
         }
     }
-    // Retorna a lista completa de produtos processados
+    
+    // CORREÇÃO: Retorna a lista completa de produtos processados
     return todosOsProdutos;
 }
+
 module.exports = { performLogin, scrapeAllProducts };
