@@ -19,10 +19,10 @@ async function performLoginAndGetCookies(page, email, password, captchaKey) {
 
 async function scrapeProducts(page) {
     console.log('Iniciando extração de produtos...');
-    // ... (Aqui entraria a lógica completa de extração de produtos que já desenvolvemos,
-    //      com a paginação e a busca de detalhes via API interna)
-    console.log('Extração de produtos finalizada.');
-    return []; // Placeholder
+    // A lógica completa de extração e enriquecimento de dados que já desenvolvemos entra aqui.
+    // Por enquanto, vamos simular para manter o exemplo claro.
+    console.log('Extração de produtos finalizada (simulação).');
+    return []; // Placeholder para a lista de produtos extraídos
 }
 
 module.exports = { performLoginAndGetCookies, scrapeProducts };
