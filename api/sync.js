@@ -36,6 +36,7 @@ async function obaobaSync(action, email, password, userId) {
       console.log('Cookies de sessão carregados no navegador.');
 
       await page.goto('https://app.obaobamix.com.br/admin/products');
+      
       if (page.url().includes('/login')) {
         throw new Error('Sessão expirada. Por favor, conecte-se novamente para renovar a sessão.');
       }
