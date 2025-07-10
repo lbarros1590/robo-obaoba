@@ -17,6 +17,7 @@ async function resolveCaptcha(siteKey, pageUrl, apiKey) {
         throw new Error(`Erro ao enviar CAPTCHA: ${res.data.request}`);
     }
 
+    // Loop para verificar o resultado do CAPTCHA
     while (true) {
         await new Promise(resolve => setTimeout(resolve, 5000));
         console.log('Aguardando resolução do CAPTCHA...');
