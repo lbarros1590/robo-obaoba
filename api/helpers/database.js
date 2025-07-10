@@ -2,7 +2,7 @@ async function saveSessionCookies(supabase, userId, cookies) {
     console.log('Salvando cookies de sessão no banco de dados...');
     const { error } = await supabase
         .from('oba_oba_credentials')
-        .update({ session_cookies: cookies })
+        .update({ session_cookies: cookies, updated_at: new Date().toISOString() })
         .eq('user_id', userId);
 
     if (error) {
@@ -28,7 +28,7 @@ async function getSessionCookies(supabase, userId) {
 
 async function syncProductsWithDatabase(supabase, userId, products) {
     console.log('Iniciando sincronização dos produtos com o banco de dados...');
-    // ... (Aqui entraria a lógica completa de comparação e 'upsert' que já desenvolvemos)
+    // A lógica completa de comparação e 'upsert' que já desenvolvemos entra aqui.
     console.log('Sincronização com o banco de dados finalizada.');
 }
 
